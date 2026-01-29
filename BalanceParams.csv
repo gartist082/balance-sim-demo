@@ -1,0 +1,3 @@
+﻿role,id,hp,atk,def,crit_rate,crit_mult,dodge_rate,armor_pen
+player,knight,120,30,5,0.15,1.5,0.05,0
+enemy,slime,80,18,3,0.05,1.5,0.02,0
