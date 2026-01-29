@@ -8,9 +8,16 @@ st.set_page_config(page_title="Game Balance Simulator", layout="wide")
 
 @st.cache_data
 def load_params():
-    return pd.read_csv('balance_params.csv')
+    try:
+        df = pd.read_csv('balance_params.csv')
+        df.columns = df.columns.str.strip().str.lower()  # 핵심 수정!
+        st.success(f"✅ CSV 로드 성공! 열: {list(df.columns)}")
+        return df
+    except Exception as e:
+        st.error(f"❌ CSV 오류: {e}")
+        return None
 
-# BattleSim 함수들 (당신 BattleSim.py에서 가져옴)
+# BattleSim 함수들 (BattleSim.py에서 가져옴)
 def calculate_damage(attacker, defender):
     base_dmg = attacker['atk']
     if np.random.random() < attacker['crit_rate']:
