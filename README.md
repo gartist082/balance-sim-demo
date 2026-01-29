@@ -4,7 +4,7 @@
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://balance-sim-demo-fymypnl2dqsefveoluyf8l.streamlit.app/)
 
 ## 🎯 기능
-- 엑셀에서 작업한 캐릭터/몬스터 능력치를 CSV 파일로 변환하여 해당 파일을 파이썬에서
+- CSV로 캐릭터/몬스터 능력치 불러오기.
 - **만번 시뮬레이션**으로 승률/평균 턴 계산
 - 히스토그램으로 턴 분포 시각화
 
