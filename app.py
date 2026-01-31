@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import numpy as np
 
 # 페이지 기본 설정
-st.set_page_config(page_title="Lost Ark Mobile - Class Balance Sim", layout="wide")
+st.set_page_config(page_title="Class Balance Sim", layout="wide")
 
 # -----------------------------------------------------------------------------
 # 1. 데이터 로드 및 전처리 (Data Loading)
@@ -98,7 +98,7 @@ class Character:
 # -----------------------------------------------------------------------------
 # 3. UI 구성 (Streamlit)
 # -----------------------------------------------------------------------------
-st.title("⚔️ Lost Ark Mobile - Combat Balance Simulator")
+st.title("⚔️ Combat Balance Simulator")
 st.markdown("""
 이 시뮬레이터는 **Time-based Logic**을 사용하여 실제 인게임 전투 상황을 모사합니다.
 쿨타임 감소, 캐스팅 시간, 크리티컬 확률이 모두 실시간으로 반영됩니다.
