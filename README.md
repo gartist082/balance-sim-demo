@@ -1,6 +1,6 @@
 # ⚔️ Action RPG Combat Mechanics Simulator (MVP)
 
-> **Role:** Lead Game Balance Designer (Candidate)  
+> **Role:** Game Balance Designer (Candidate)  
 > **Core Concept:** Time-based Action Combat Simulation & Data Pipeline
 
 ## 📱 Live Demo
