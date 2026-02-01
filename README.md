@@ -1,53 +1,85 @@
-# ⚔️ Action RPG Combat Mechanics Simulator (MVP)
+# ⚔️ MMORPG Combat Balance Simulator (Pro Ver.)
 
-> **Role:** Game Balance Designer (Candidate)  
-> **Core Concept:** Time-based Action Combat Simulation & Data Pipeline
-
-## 📱 Live Demo
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://balance-sim-demo-fymypnl2dqsefveoluyf8l.streamlit.app/)
-*(클릭하여 시뮬레이터를 직접 실행해보실 수 있습니다)*
+> **Role:** Lead Balance Designer (Candidate)  
+> **Core Concept:** Data-Driven Combat Verification & Monte Carlo Simulation  
+> **Live Demo:** [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://balance-sim-demo-fymypnl2dqsefveoluyf8l.streamlit.app/)
 
 ## 🎯 Project Objective
-액션 RPG 환경에서의 **복합적인 전투 변수(Cool-time, Casting Time, Animation Delay)**를 고려한 정밀 밸런싱 도구의 프로토타입(MVP)입니다. 
+MMORPG 밸런싱의 핵심인 **'지속 가능한 전투 환경'**과 **'확률적 변수 제어'**를 위한 자동화 검증 도구입니다.
 
-단순 턴제 계산이 아닌, **Time-Stream 방식**을 도입하여 실제 인게임 환경과 유사한 DPS 효율을 검증하고, 기획자가 엑셀 데이터만으로 밸런스를 제어하는 **Data-Driven Workflow**를 구현하는 데 초점을 맞췄습니다.
+기존 엑셀(Static) 계산의 한계를 넘어, **Time-stream(시간 흐름)** 기반의 시뮬레이션을 통해 스킬 사이클, 자원(MP) 관리, 그리고 확률(Crit/BackAttack)에 따른 **DPS 편차(Standard Deviation)**를 정량적으로 분석하는 데 초점을 맞췄습니다.
+
+---
 
 ## 🛠 Key Features
 
-### 1. Time-based Simulation Engine
-- **기존 문제:** 단순 턴제(Turn-based) 방식은 '선후딜'과 '재사용 대기시간'이 겹치는 실시간 액션 전투의 밀도를 반영하지 못함.
-- **해결:** 0.1초 단위의 타임라인 시뮬레이션 구현.
-    - **Casting Logic:** 스킬 시전 중(Casting)에는 다른 행동 불가 상태(State) 처리.
-    - **Cooldown Management:** 쿨타임 감소(CDR) 수치와 실시간 쿨타임 회복 로직 적용.
+### 1. Hybrid Simulation Engine (Single & Monte Carlo)
+단순한 1회성 검증을 넘어, 통계적 신뢰성을 확보하기 위한 두 가지 모드를 지원합니다.
+*   **Single Run (Process Verification):**
+    *   초(sec) 단위 로그를 통해 스킬 쿨타임 정렬, 자원 소모, 선/후딜레이 로직이 기획 의도대로 작동하는지 검증합니다.
+*   **Monte Carlo Simulation (Statistical Verification):**
+    *   치명타, 백어택 등 확률 변수가 포함된 전투를 **대규모(N=100~1,000) 반복 시행**합니다.
+    *   이를 통해 **'운 좋은 유저(Max DPS)'**와 **'운 나쁜 유저(Min DPS)'**의 격차를 시각화하여 밸런스 리스크를 사전 감지합니다.
 
-### 2. Data-Driven Architecture (File Upload System)
-- **설계 의도:** 코드를 수정하지 않고, **엑셀 데이터(Table) 교체만으로** 밸런스 패치를 즉각 테스트할 수 있는 **'데이터 파이프라인'** 구축.
-- **확장성:** 미리 정의된 **Table Schema(규격)**만 준수한다면, 전사/마법사/암살자 등 직업군이나 프로젝트에 관계없이 시뮬레이션 가능.
-- **검증:** Web UI에서 직접 엑셀 파일을 업로드하여, 다양한 기획 수치가 로직에 정상적으로 반영되는지 실시간 검증 가능.
+### 2. A/B Testing Environment (Live Tuning)
+*   **실시간 비교:** 엑셀을 수정해서 다시 올릴 필요 없이, 웹 UI에서 즉시 수치(공격력, 쿨감 등)를 조절하여 **Original vs Tuned** 결과를 그래프로 비교합니다.
+*   **의사결정 지원:** "공격력을 5% 올리면 실제 DPS는 얼마나 오르는가?"에 대한 답을 즉각적으로 도출합니다.
 
-### 3. Visual Analytics
-- **DPS Graph:** 시간 경과에 따른 누적 딜량 및 순간 DPS 변화 추이 시각화.
-- **Skill Breakdown:** 전체 딜량에서 각 스킬이 차지하는 비중(Contribution) 분석.
-- **Combat Log:** 틱(Tick) 단위의 상세 전투 로그 제공.
+### 3. Resource & Mechanics Logic
+단순 DPS 계산기가 아닌, 실제 인게임 매커니즘을 반영했습니다.
+*   **MP Management:** 마나가 부족하면 스킬 사용을 중단하고 회복(Regen)을 기다리는 '딜 로스(Deal Loss)' 상황 구현.
+*   **Action Logic:** 백어택(Back Attack) 성공 확률 변수 및 다단 히트(Multi-hit)별 개별 치명타 판정 적용.
+
+---
+
+## 🧩 Design Rationale (기획 의도)
+
+이 시뮬레이터의 주요 설정값은 다음과 같은 기획적 근거를 바탕으로 설계되었습니다.
+
+| 설정 항목 | 설정값 (Default) | 기획적 근거 (Rationale) |
+| :--- | :--- | :--- |
+| **Min Combat Time** | **30 sec** | 주요 스킬의 쿨타임(10~15초)이 최소 2회 이상 순환(Rotation)되어야 유의미한 평균 DPS 산출 가능. |
+| **Max Combat Time** | **180 sec (3 min)** | 모바일/PC MMORPG 레이드 보스의 일반적인 페이즈 전환 및 광폭화(Enrage) 기준 시간. **마나(MP) 고갈에 따른 지속 딜링 능력(Sustain)**을 검증하기 위함. |
+| **Monte Carlo** | **N Iterations** | 단일 실행 시 발생하는 난수(Random Seed) 편향을 제거하고, 정규분포에 근사한 **모수적 특성**을 파악하기 위함. |
+
+---
 
 ## 📂 Data Protocol (Excel Schema)
-이 시뮬레이터는 약속된 **데이터 규격(Protocol)**을 준수하는 엑셀 파일을 통해 동작합니다. (`BalanceSheets.xlsx` 참조)
 
-| Sheet Name | Description | Key Columns |
+이 시뮬레이터는 약속된 **데이터 규격(Schema)**을 준수하는 엑셀 파일을 통해 동작합니다. (`BalanceSheets.xlsx` 참조)
+
+### Sheet 1: Stats (Character Spec)
+| Column | Description | Note |
 | :--- | :--- | :--- |
-| **Stats** | 클래스 기본 스탯 정의 | `Class`, `Base_ATK`, `Crit_Rate`, `Crit_Dmg`, `Cooldown_Reduction` |
-| **Skills** | 스킬 상세 스펙 정의 | `Skill_Name`, `Cooldown`, `Damage_Coef`, `Cast_Time`, `Is_BackAttack` |
+| `Class` | 클래스명 (Key) | Warrior, Mage 등 |
+| `Base_ATK` | 기본 공격력 | |
+| `Crit_Rate` | 치명타 확률 | 0.0 ~ 1.0 (0% ~ 100%) |
+| `Crit_Dmg` | 치명타 배율 | 2.0 = 200% 데미지 |
+| `Cooldown_Reduction` | 쿨타임 감소율 | 스킬 회전율에 영향 |
+| `Back_Attack_Bonus` | 백어택 추뎀 배율 | 컨트롤 요소 반영 |
+| `Max_MP` / `MP_Regen` | 자원 총량 및 회복 | **지속 전투 능력 제어 변수** |
 
-> *Note: 업로드 기능은 이 스키마(Schema)가 일치하는 모든 데이터셋에 대해 호환성을 가집니다.*
+### Sheet 2: Skills (Action Logic)
+| Column | Description | Note |
+| :--- | :--- | :--- |
+| `Skill_Name` | 스킬명 | |
+| `Cooldown` | 재사용 대기시간 | |
+| `Damage_Coef` | 데미지 계수 | 공격력의 N배 |
+| `Cast_Time` | 시전 시간 | **Action Delay (선후딜)** 반영 |
+| `Is_BackAttack` | 백어택 가능 여부 | TRUE / FALSE |
+| `MP_Cost` | 마나 소모량 | 0일 경우 평타(Basic Attack)로 간주 |
+| `Hit_Count` | 타격 횟수 | 다단 히트 시 치명타 개별 판정 |
 
-## 💻 Tech Stack
-- **Language:** Python 3.9
-- **Core Libraries:** 
-    - `Pandas` (Data Processing)
-    - `Plotly` (Interactive Visualization)
-    - `Openpyxl` (Excel Integration)
-- **Deployment:** Streamlit Cloud
+---
 
-## 📝 Limitations & Future Improvements
-- 본 프로젝트는 핵심 로직 검증을 위한 MVP 모델로, 피격/회피 로직 및 상태이상(CC기) 변수는 제외되었습니다.
-- 향후 몬스터 패턴 로직과 파티 시너지(Buff/Debuff) 계산 모듈을 추가하여 고도화할 수 있습니다.
+## 💻 Tech Stack & Usage
+*   **Python 3.9** (Core Logic)
+*   **Streamlit** (Web Dashboard UI)
+*   **Pandas & NumPy** (Data Processing & Probability Calculation)
+*   **Plotly** (Interactive Visualization)
+
+### How to Run
+1.  우측 상단의 **Live Demo** 배지를 클릭합니다.
+2.  `BalanceSheets.xlsx` 파일을 업로드하거나 기본 데이터를 사용합니다.
+3.  좌측 사이드바에서 수치를 조정(Tuning)합니다.
+4.  **[단일 전투 실행]**으로 로직을 검증하고, **[몬테카를로 시뮬레이션]**으로 확률적 안정성을 검증합니다.
