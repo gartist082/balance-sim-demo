@@ -3,47 +3,55 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
+import time
 
 # 페이지 기본 설정
-st.set_page_config(page_title="Class Balance Sim", layout="wide")
+st.set_page_config(page_title="MMORPG Balance Sim Pro", layout="wide")
 
 # -----------------------------------------------------------------------------
-# 1. 데이터 로드 및 전처리 (Data Loading)
+# 1. 데이터 로드 및 전처리
 # -----------------------------------------------------------------------------
 @st.cache_data
 def load_data(uploaded_file):
     try:
-        # 엑셀 파일에서 시트별로 데이터 로드
         xls = pd.ExcelFile(uploaded_file)
         stats_df = pd.read_excel(xls, 'Stats')
         skills_df = pd.read_excel(xls, 'Skills')
         
-        # 컬럼명 공백 제거 및 소문자 변환 (오류 방지)
+        # 컬럼명 공백 제거
         stats_df.columns = stats_df.columns.str.strip()
         skills_df.columns = skills_df.columns.str.strip()
         
         return stats_df, skills_df
     except Exception as e:
-        st.error(f"데이터 로드 중 오류 발생: {e}")
         return None, None
 
 # -----------------------------------------------------------------------------
-# 2. 시뮬레이션 엔진 (Core Logic) - 시간 흐름(Time-based) 방식
+# 2. 시뮬레이션 엔진 (Core Logic)
 # -----------------------------------------------------------------------------
 class Character:
-    def __init__(self, stat_row, skills_df):
+    def __init__(self, stat_row, skills_df, back_attack_prob=0.0):
         self.name = stat_row['Class']
+        # 기본 스탯
         self.base_atk = stat_row['Base_ATK']
         self.crit_rate = stat_row['Crit_Rate']
         self.crit_dmg = stat_row['Crit_Dmg']
-        self.cdr = stat_row['Cooldown_Reduction'] # 쿨타임 감소
+        self.cdr = stat_row['Cooldown_Reduction']
+        self.back_attack_bonus = stat_row.get('Back_Attack_Bonus', 1.0) # 없으면 1.0
         
-        # 해당 클래스의 스킬만 가져오기
+        # 자원(MP) 스탯
+        self.max_mp = stat_row.get('Max_MP', 100)
+        self.mp_regen = stat_row.get('MP_Regen', 5)
+        self.current_mp = self.max_mp
+        
+        # 시뮬레이션 설정
+        self.back_attack_prob = back_attack_prob # 백어택 성공 확률
+        
+        # 스킬 세팅
         self.skills = skills_df[skills_df['Class'] == self.name].copy()
-        # 쿨타임 관리용 컬럼 추가 (Next Available Time)
         self.skills['next_available'] = 0.0
         
-        # 시뮬레이션 상태 변수
+        # 상태 변수
         self.current_time = 0.0
         self.is_casting = False
         self.cast_end_time = 0.0
@@ -53,37 +61,71 @@ class Character:
     def update(self, time_step):
         self.current_time += time_step
         
-        # 1. 캐스팅 중인지 확인
+        # 1. MP 회복 (초당 회복량 * 시간)
+        if self.current_mp < self.max_mp:
+            self.current_mp += self.mp_regen * time_step
+            if self.current_mp > self.max_mp:
+                self.current_mp = self.max_mp
+
+        # 2. 캐스팅 중인지 확인
         if self.is_casting:
             if self.current_time >= self.cast_end_time:
                 self.is_casting = False # 캐스팅 완료
             else:
-                return # 캐스팅 중에는 아무것도 안함
+                return # 캐스팅 중엔 행동 불가
         
-        # 2. 사용 가능한 스킬 탐색 (우선순위: 쿨타임 돌아온 것 중 데미지 계수 높은 순)
-        # 실제 쿨타임 적용: cooldown * (1 - cdr)
-        ready_skills = self.skills[self.skills['next_available'] <= self.current_time].sort_values(by='Damage_Coef', ascending=False)
+        # 3. 사용 가능한 스킬 탐색
+        # 조건: 쿨타임 완료 AND 마나 충분
+        available_skills = self.skills[
+            (self.skills['next_available'] <= self.current_time) & 
+            (self.skills['MP_Cost'] <= self.current_mp)
+        ].sort_values(by='Damage_Coef', ascending=False) # 계수 높은 것 우선
         
-        if not ready_skills.empty:
-            skill = ready_skills.iloc[0]
+        if not available_skills.empty:
+            skill = available_skills.iloc[0]
             self.use_skill(skill)
+        else:
+            # 스킬을 못 쓰면 대기 (평타가 쿨타임 0, MP 0이면 평타를 치게 됨)
+            pass
 
     def use_skill(self, skill):
         skill_idx = skill.name
+        skill_name = skill['Skill_Name']
+        hit_count = int(skill.get('Hit_Count', 1))
+        mp_cost = skill.get('MP_Cost', 0)
         
-        # 데미지 계산
-        is_crit = np.random.random() < self.crit_rate
-        dmg_mult = self.crit_dmg if is_crit else 1.0
-        damage = self.base_atk * skill['Damage_Coef'] * dmg_mult
+        # 자원 소모
+        self.current_mp -= mp_cost
         
-        # 로그 기록
-        self.total_damage += damage
+        # 데미지 계산 (다단 히트 로직)
+        total_skill_dmg = 0
+        hits_info = [] # 로그용
+        
+        for _ in range(hit_count):
+            # 1) 치명타 판정
+            is_crit = np.random.random() < self.crit_rate
+            dmg_mult = self.crit_dmg if is_crit else 1.0
+            
+            # 2) 백어택 판정 (스킬이 백어택 가능하고, 확률에 성공했을 때)
+            is_back = False
+            if skill['Is_BackAttack'] and (np.random.random() < self.back_attack_prob):
+                is_back = True
+                dmg_mult *= self.back_attack_bonus
+            
+            # 3) 최종 데미지 (계수를 타수만큼 나누지 않고, 기획 데이터가 '타당 데미지'가 아니라 '총 데미지'라면 나눠야 함)
+            # 여기서는 편의상 입력된 Damage_Coef가 "총 계수"라고 가정하고 타수로 나눔
+            damage = (self.base_atk * skill['Damage_Coef'] / hit_count) * dmg_mult
+            
+            total_skill_dmg += damage
+            
+        # 로그 기록 (타수 합산해서 기록)
+        self.total_damage += total_skill_dmg
         self.damage_log.append({
             'Time': round(self.current_time, 2),
-            'Skill': skill['Skill_Name'],
-            'Damage': round(damage),
-            'Type': 'Critical' if is_crit else 'Hit',
-            'Cumulative_Damage': round(self.total_damage)
+            'Skill': skill_name,
+            'Damage': int(total_skill_dmg),
+            'MP': int(self.current_mp),
+            'Cumulative_Damage': int(self.total_damage)
         })
         
         # 상태 업데이트 (캐스팅 시작)
@@ -92,26 +134,18 @@ class Character:
         
         # 쿨타임 적용 (쿨감 반영)
         real_cooldown = skill['Cooldown'] * (1 - self.cdr)
-        # 스킬 사용 완료 시점이 아니라 '사용 시작' 시점부터 쿨타임이 도는 것이 일반적 (게임따라 다름)
         self.skills.at[skill_idx, 'next_available'] = self.current_time + real_cooldown
 
 # -----------------------------------------------------------------------------
-# 3. UI 구성 (Streamlit)
+# 3. 메인 UI (Streamlit)
 # -----------------------------------------------------------------------------
-st.title("⚔️ Combat Balance Simulator")
-st.markdown("""
-이 시뮬레이터는 **Time-based Logic**을 사용하여 실제 인게임 전투 상황을 모사합니다.
-쿨타임 감소, 캐스팅 시간, 크리티컬 확률이 모두 실시간으로 반영됩니다.
-""")
+st.title("⚔️ MMORPG Balance Simulator (Pro Ver.)")
+st.markdown("### 데이터 기반 전투 검증 및 몬테카를로 시뮬레이션")
 
-# 사이드바: 설정
-st.sidebar.header("Simulation Settings")
-
-# 파일 업로더 (기본적으로 로컬 파일 찾기 시도)
-uploaded_file = st.sidebar.file_uploader("Upload Excel File", type=['xlsx'])
+# 사이드바 설정
+st.sidebar.header("1. Data & Settings")
+uploaded_file = st.sidebar.file_uploader("Upload BalanceSheets.xlsx", type=['xlsx'])
 default_file = "BalanceSheets.xlsx"
-
-stats_df, skills_df = None, None
 
 if uploaded_file:
     stats_df, skills_df = load_data(uploaded_file)
@@ -120,67 +154,133 @@ else:
         stats_df, skills_df = load_data(default_file)
         st.sidebar.success(f"기본 파일 로드됨: {default_file}")
     except:
-        st.sidebar.warning("좌측 메뉴에서 엑셀 파일을 업로드해주세요.")
+        stats_df, skills_df = None, None
+        st.sidebar.error("엑셀 파일을 업로드하거나 폴더에 넣어주세요.")
 
 if stats_df is not None and skills_df is not None:
+    
     # 클래스 선택
-    selected_class = st.sidebar.selectbox("Select Class", stats_df['Class'].unique())
+    selected_class = st.sidebar.selectbox("Class Select", stats_df['Class'].unique())
+    original_stat = stats_df[stats_df['Class'] == selected_class].iloc[0]
     
-    # 시뮬레이션 시간 설정
-    sim_duration = st.sidebar.slider("Combat Duration (sec)", 30, 300, 60)
+    # -------------------------------------------------------------------------
+    # A/B 테스트 설정 (수치 조정 시뮬레이션)
+    # -------------------------------------------------------------------------
+    st.sidebar.header("2. Stat Tuning (A/B Test)")
+    st.sidebar.info("아래 수치를 조정하여 원본과 비교해보세요.")
     
-    # 실행 버튼
-    if st.sidebar.button("Run Simulation", type="primary"):
-        
-        # 선택된 클래스 데이터 추출
-        stat_row = stats_df[stats_df['Class'] == selected_class].iloc[0]
-        
-        # 시뮬레이션 실행
-        char = Character(stat_row, skills_df)
-        time_step = 0.1 # 0.1초 단위 시뮬레이션
-        
-        with st.spinner('Simulating combat...'):
-            for _ in range(int(sim_duration / time_step)):
-                char.update(time_step)
-        
-        # 결과 데이터프레임
-        log_df = pd.DataFrame(char.damage_log)
-        
-        if log_df.empty:
-            st.error("데미지를 입힌 기록이 없습니다. 스탯이나 스킬 데이터를 확인해주세요.")
-        else:
-            # --- 결과 대시보드 ---
-            dps = char.total_damage / sim_duration
-            
-            # 1. 핵심 지표 (KPI)
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total Damage", f"{int(char.total_damage):,}")
-            col2.metric("DPS (Damage Per Sec)", f"{int(dps):,}")
-            col3.metric("Skill Count", f"{len(log_df)} times")
-            
-            # 2. 차트 영역
-            tab1, tab2 = st.tabs(["📈 Damage Graph", "🥧 Skill Breakdown"])
-            
-            with tab1:
-                # 시간대별 누적 데미지 그래프
-                fig_line = px.line(log_df, x='Time', y='Cumulative_Damage', 
-                                   title=f"{selected_class} - Damage Over Time",
-                                   labels={'Cumulative_Damage': 'Total Damage'})
-                st.plotly_chart(fig_line, use_container_width=True)
-                
-            with tab2:
-                # 스킬별 데미지 비중
-                skill_dmg = log_df.groupby('Skill')['Damage'].sum().reset_index()
-                fig_pie = px.pie(skill_dmg, values='Damage', names='Skill', 
-                                 title="Damage Distribution by Skill", hole=0.4)
-                st.plotly_chart(fig_pie, use_container_width=True)
+    adj_atk = st.sidebar.number_input("Base ATK", value=int(original_stat['Base_ATK']))
+    adj_crit = st.sidebar.slider("Crit Rate", 0.0, 1.0, float(original_stat['Crit_Rate']))
+    adj_cdr = st.sidebar.slider("Cooldown Reduction", 0.0, 0.5, float(original_stat['Cooldown_Reduction']))
+    
+    # 백어택 확률 (플레이어 컨트롤 실력 변수)
+    back_attack_prob = st.sidebar.slider("Back Attack Success Rate (Control)", 0.0, 1.0, 0.5, help="백어택 스킬 사용 시 성공할 확률")
+    sim_duration = st.sidebar.slider("Combat Time (sec)", 30, 180, 60)
 
-            # 3. 상세 전투 로그 (Expander)
-            with st.expander("View Combat Log (Raw Data)"):
-                st.dataframe(log_df, use_container_width=True)
+    # -------------------------------------------------------------------------
+    # 메인 화면: 실행 및 결과
+    # -------------------------------------------------------------------------
+    
+    col_act1, col_act2 = st.columns(2)
+    with col_act1:
+        run_single = st.button("▶️ 단일 전투 실행 (Single Run)", type="primary")
+    with col_act2:
+        run_monte = st.button("🎲 몬테카를로 시뮬레이션 (1,000회)", type="secondary")
 
-            # 4. 사용된 스탯 정보 표시
-            st.info(f"**Applied Stats:** Base ATK: {char.base_atk} | Crit Rate: {char.crit_rate*100}% | Crit Dmg: {char.crit_dmg}x | CDR: {char.cdr*100}%")
+    # 조정된 스탯으로 새 데이터 생성
+    tuned_stat = original_stat.copy()
+    tuned_stat['Base_ATK'] = adj_atk
+    tuned_stat['Crit_Rate'] = adj_crit
+    tuned_stat['Cooldown_Reduction'] = adj_cdr
 
-else:
-    st.info("Please upload a balance data file to proceed.")
+    # === 기능 1: 단일 전투 실행 (로그 확인용) ===
+    if run_single:
+        # A: 원본, B: 튜닝
+        char_a = Character(original_stat, skills_df, back_attack_prob)
+        char_b = Character(tuned_stat, skills_df, back_attack_prob)
+        
+        time_step = 0.1
+        steps = int(sim_duration / time_step)
+        
+        for _ in range(steps):
+            char_a.update(time_step)
+            char_b.update(time_step)
+            
+        # 결과 표시
+        dps_a = char_a.total_damage / sim_duration
+        dps_b = char_b.total_damage / sim_duration
+        gap = ((dps_b - dps_a) / dps_a) * 100
+        
+        st.subheader("📊 Single Run Result")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Original DPS", f"{int(dps_a):,}")
+        m2.metric("Tuned DPS", f"{int(dps_b):,}", delta=f"{gap:.2f}%")
+        m3.metric("Skill Uses (Tuned)", len(char_b.damage_log))
+        
+        # 그래프: 시간대별 누적 딜량 비교
+        df_a = pd.DataFrame(char_a.damage_log)
+        df_b = pd.DataFrame(char_b.damage_log)
+        df_a['Version'] = 'Original'
+        df_b['Version'] = 'Tuned'
+        
+        if not df_a.empty and not df_b.empty:
+            combined_df = pd.concat([df_a, df_b])
+            fig = px.line(combined_df, x='Time', y='Cumulative_Damage', color='Version', 
+                          title="Damage Comparison Over Time", markers=True)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            with st.expander("상세 전투 로그 (Tuned Ver)"):
+                st.dataframe(df_b)
+
+    # === 기능 2: 몬테카를로 시뮬레이션 (확률 분포 확인용) ===
+    if run_monte:
+        st.subheader("🎲 Monte Carlo Simulation (N=1,000)")
+        
+        results = []
+        progress_bar = st.progress(0)
+        
+        start_time = time.time()
+        
+        # 1000번 반복
+        for i in range(1000):
+            # 튜닝된 스탯으로만 시뮬레이션
+            sim_char = Character(tuned_stat, skills_df, back_attack_prob)
+            
+            step = 0.1
+            max_step = int(sim_duration / step)
+            for _ in range(max_step):
+                sim_char.update(step)
+            
+            results.append(sim_char.total_damage / sim_duration) # DPS 저장
+            
+            if i % 100 == 0:
+                progress_bar.progress((i + 1) / 1000)
+        
+        progress_bar.progress(100)
+        elapsed = time.time() - start_time
+        
+        # 결과 분석
+        avg_dps = np.mean(results)
+        min_dps = np.min(results)
+        max_dps = np.max(results)
+        std_dev = np.std(results) # 표준편차
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Average DPS", f"{int(avg_dps):,}")
+        c2.metric("Min DPS (Unlucky)", f"{int(min_dps):,}")
+        c3.metric("Max DPS (Lucky)", f"{int(max_dps):,}")
+        c4.metric("Stability (Std Dev)", f"{int(std_dev):,}")
+        
+        st.success(f"Simulation Complete in {elapsed:.2f} seconds!")
+        
+        # 히스토그램 (분포도)
+        fig_hist = px.histogram(results, nbins=50, title="DPS Distribution (Probability Density)",
+                                labels={'value': 'DPS', 'count': 'Frequency'})
+        fig_hist.add_vline(x=avg_dps, line_dash="dash", line_color="red", annotation_text="Avg")
+        st.plotly_chart(fig_hist, use_container_width=True)
+        
+        st.markdown("""
+        **💡 분석 가이드:**
+        * 그래프가 **뾰족할수록(표준편차가 낮을수록)** 운에 좌우되지 않는 안정적인 딜러입니다.
+        * 그래프가 **넓게 퍼져있다면**, 치명타나 확률형 스킬 의존도가 높다는 뜻입니다.
+        """)
