@@ -234,29 +234,37 @@ if stats_df is not None and skills_df is not None:
 
     # === 기능 2: 몬테카를로 시뮬레이션 (확률 분포 확인용) ===
     if run_monte:
-        st.subheader("🎲 Monte Carlo Simulation (N=1,000)")
+         st.subheader("🎲 Monte Carlo Simulation")
+        
+        # [수정 1] 테스트를 위해 횟수를 1,000 -> 100으로 줄임 (나중에 1000으로 늘려도 됨)
+        SIM_COUNT = 100  
         
         results = []
         progress_bar = st.progress(0)
+        status_text = st.empty() # 진행상황 텍스트 표시용
         
         start_time = time.time()
         
-        # 1000번 반복
-        for i in range(1000):
-            # 튜닝된 스탯으로만 시뮬레이션
-            sim_char = Character(tuned_stat, skills_df, back_attack_prob)
-            
-            step = 0.1
-            max_step = int(sim_duration / step)
-            for _ in range(max_step):
-                sim_char.update(step)
-            
-            results.append(sim_char.total_damage / sim_duration) # DPS 저장
-            
-            if i % 100 == 0:
-                progress_bar.progress((i + 1) / 1000)
+        # [수정 2] Spinner 추가 (멈춘 게 아님을 보여줌)
+        with st.spinner(f'전투 {SIM_COUNT}회를 시뮬레이션 중입니다... 잠시만 기다려주세요!'):
+            for i in range(SIM_COUNT):
+                # 튜닝된 스탯으로만 시뮬레이션
+                sim_char = Character(tuned_stat, skills_df, back_attack_prob)
+                
+                step = 0.1
+                max_step = int(sim_duration / step)
+                for _ in range(max_step):
+                    sim_char.update(step)
+                
+                results.append(sim_char.total_damage / sim_duration) # DPS 저장
+                
+                # 진행률 업데이트
+                if i % 10 == 0:
+                    progress_bar.progress((i + 1) / SIM_COUNT)
+                    status_text.text(f"진행률: {int((i+1)/SIM_COUNT*100)}% 완료")
         
         progress_bar.progress(100)
+        status_text.text("✅ 시뮬레이션 완료!")
         elapsed = time.time() - start_time
         
         # 결과 분석
@@ -271,10 +279,10 @@ if stats_df is not None and skills_df is not None:
         c3.metric("Max DPS (Lucky)", f"{int(max_dps):,}")
         c4.metric("Stability (Std Dev)", f"{int(std_dev):,}")
         
-        st.success(f"Simulation Complete in {elapsed:.2f} seconds!")
+        st.success(f"Simulation Complete in {elapsed:.2f} seconds! (N={SIM_COUNT})")
         
         # 히스토그램 (분포도)
-        fig_hist = px.histogram(results, nbins=50, title="DPS Distribution (Probability Density)",
+        fig_hist = px.histogram(results, nbins=30, title=f"DPS Distribution (N={SIM_COUNT})",
                                 labels={'value': 'DPS', 'count': 'Frequency'})
         fig_hist.add_vline(x=avg_dps, line_dash="dash", line_color="red", annotation_text="Avg")
         st.plotly_chart(fig_hist, use_container_width=True)
