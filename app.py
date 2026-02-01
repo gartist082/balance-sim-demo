@@ -185,7 +185,7 @@ if stats_df is not None and skills_df is not None:
     with col_act1:
         run_single = st.button("▶️ 단일 전투 실행 (Single Run)", type="primary")
     with col_act2:
-        run_monte = st.button("🎲 몬테카를로 시뮬레이션 (1,000회)", type="secondary")
+        run_monte = st.button("🎲 몬테카를로 시뮬레이션 (100회)", type="secondary")
 
     # 조정된 스탯으로 새 데이터 생성
     tuned_stat = original_stat.copy()
