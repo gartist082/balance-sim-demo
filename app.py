@@ -234,9 +234,9 @@ if stats_df is not None and skills_df is not None:
 
     # === 기능 2: 몬테카를로 시뮬레이션 (확률 분포 확인용) ===
     if run_monte:
-         st.subheader("🎲 Monte Carlo Simulation")
+        st.subheader("🎲 Monte Carlo Simulation")
         
-        # [수정 1] 테스트를 위해 횟수를 1,000 -> 100으로 줄임 (나중에 1000으로 늘려도 됨)
+        # 테스트를 위해 횟수를 1,000 -> 100으로 줄임
         SIM_COUNT = 100  
         
         results = []
@@ -245,7 +245,7 @@ if stats_df is not None and skills_df is not None:
         
         start_time = time.time()
         
-        # [수정 2] Spinner 추가 (멈춘 게 아님을 보여줌)
+        # Spinner 추가
         with st.spinner(f'전투 {SIM_COUNT}회를 시뮬레이션 중입니다... 잠시만 기다려주세요!'):
             for i in range(SIM_COUNT):
                 # 튜닝된 스탯으로만 시뮬레이션
