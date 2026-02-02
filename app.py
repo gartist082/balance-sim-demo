@@ -8,13 +8,10 @@ import numpy as np
 st.set_page_config(page_title="MMORPG Balance Verification Pro", layout="wide")
 PLOT_CONFIG = {'displayModeBar': False, 'staticPlot': True}
 
-# -----------------------------------------------------------------------------
-# [핵심 수정] 세션 상태 초기화 (탭 유지 & 데이터 유지)
-# -----------------------------------------------------------------------------
+# 세션 초기화
 if 'growth_res' not in st.session_state: st.session_state.growth_res = None
 if 'monte_res' not in st.session_state: st.session_state.monte_res = None
 if 'raid_res' not in st.session_state: st.session_state.raid_res = None
-# 탭 상태 저장은 Streamlit 구버전에서는 어려우나, 데이터 유지를 통해 UX 개선
 
 st.title("⚖️ MMORPG Balance Verification System")
 
@@ -28,7 +25,6 @@ else:
     except: pass
 
 if data:
-    # 탭 구성
     tab1, tab2, tab3, tab4 = st.tabs(["1. 클래스 성장/전투 검증", "2. 레이드 난이도 검증", "3. 과금 밸런스 검증", "4. 데이터 열람"])
 
     # =========================================================================
@@ -37,12 +33,10 @@ if data:
     with tab1:
         st.subheader("1. Class Growth & Combat Simulation")
         
-        # A/B 테스트 패널
-        with st.expander("⚙️ 시뮬레이션 설정 및 튜닝 (A/B Testing)", expanded=True):
+        with st.expander("⚙️ 시뮬레이션 설정 (Setting)", expanded=True):
             c1, c2, c3 = st.columns(3)
             with c1:
                 if 'Class_Job' in data:
-                    # key를 지정하여 리로드 시 값 유지
                     sel_class = st.selectbox("직업 선택", data['Class_Job']['Class_Name'].unique(), key="t1_class")
                 else: st.stop()
             with c2: sel_level = st.slider("테스트 레벨", 1, 60, 60, key="t1_level")
@@ -57,7 +51,6 @@ if data:
 
         col_b1, col_b2 = st.columns(2)
         with col_b1:
-            # 폼 대신 일반 버튼 사용 (탭 튕김 방지를 위해 키 분리)
             btn_single = st.button("▶️ 단일 전투 실행 (로그 분석)", key="btn_single")
         with col_b2:
             btn_monte = st.button("🎲 몬테카를로 실행 (편차 확인)", key="btn_monte")
@@ -92,7 +85,6 @@ if data:
             st.session_state.monte_res = {"data": results, "target": target_dps}
             st.session_state.growth_res = None
 
-        # 결과 표시 (데이터가 존재할 경우)
         if st.session_state.growth_res:
             res = st.session_state.growth_res
             ratio = (res['player'].total_damage / res['time']) / res['target'] if res['target'] > 0 else 0
@@ -105,8 +97,11 @@ if data:
             
             if res['player'].damage_log:
                 log_df = pd.DataFrame(res['player'].damage_log)
+                st.markdown("##### 📈 시간대별 누적 데미지")
                 st.line_chart(log_df.set_index('Time')['Cumulative'])
-                with st.expander("상세 로그"): st.dataframe(log_df)
+                
+                with st.expander("🔎 상세 전투 로그 보기"):
+                    st.dataframe(log_df)
 
         if st.session_state.monte_res:
             data_list = st.session_state.monte_res['data']
@@ -123,21 +118,19 @@ if data:
             st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
     # =========================================================================
-    # TAB 2: 레이드 난이도 검증 (수정됨)
+    # TAB 2: 레이드 난이도 검증
     # =========================================================================
     with tab2:
         st.subheader("2. Raid & Dungeon TTK Analysis")
         
         with st.expander("⚙️ 조건 설정", expanded=True):
-            # [수정] 용어 변경 및 범위 표시
             party_spec_ratio = st.slider(
                 "파티원 평균 전투력 비율 (Party Avg CP Ratio)", 
                 min_value=50, max_value=150, value=100, step=10, format="%d%%",
-                key="t2_slider" # 키 지정으로 탭 튕김 방지
+                key="t2_slider"
             )
             st.caption(f"설정 범위: 최소 50% (저스펙) ~ 최대 150% (고스펙)")
 
-        # [수정] 폼 제거하고 일반 버튼 사용 (키 지정 필수)
         if st.button("🛡️ 레이드 검증 실행", key="btn_raid"):
             if 'Dungeon_Config' not in data: st.error("Dungeon_Config 없음"); st.stop()
             
@@ -167,8 +160,10 @@ if data:
             st.markdown("##### 📊 검증 결과 리포트")
             st.dataframe(df, use_container_width=True)
             
-            fig = px.bar(df, x='던전명', y=['예상소요', '제한시간'], barmode='group', config=PLOT_CONFIG)
-            st.plotly_chart(fig, use_container_width=True)
+            # [수정 완료] config 위치 이동 (에러 해결)
+            fig = px.bar(df, x='던전명', y=['예상소요', '제한시간'], barmode='group', 
+                         title=f"클리어 타임 비교 (스펙 {party_spec_ratio}% 기준)")
+            st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
     # =========================================================================
     # TAB 3: 과금 밸런스 검증
@@ -183,19 +178,23 @@ if data:
             
             if st.button("💰 밸런스 분석 실행", key="btn_balance"):
                 base_atk = get_growth_stat(t_lv, data['Growth_Table'], 'Base_Primary_Stat')
+                
                 bal_res = []
                 for idx, row in data['Payment_Grade'].iterrows():
                     mult = row['Stat_Multiplier']
                     cp = base_atk * mult * 100 
                     bal_res.append({"Grade": row['Grade'], "Multiplier": mult, "Combat Power": int(cp)})
+                
                 st.session_state.bal_df = pd.DataFrame(bal_res)
 
             if 'bal_df' in st.session_state:
                 df_b = st.session_state.bal_df
+                
                 c1, c2 = st.columns(2)
                 with c1: st.dataframe(df_b, use_container_width=True)
                 with c2:
-                    fig = px.bar(df_b, x='Grade', y='Combat Power', color='Grade', title="전투력 격차")
+                    # [수정 완료] config 위치 이동
+                    fig = px.bar(df_b, x='Grade', y='Combat Power', color='Grade', title="전투력(CP) 격차")
                     st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
                 
                 try:
@@ -210,12 +209,14 @@ if data:
     # =========================================================================
     with tab4:
         st.subheader("4. Loaded Balance Data")
+        st.markdown("**📂 현재 로드된 엑셀 데이터 확인**")
+        
         sheet_names = list(data.keys())
         if sheet_names:
-            selected_sheet = st.selectbox("시트 선택", sheet_names, key="t4_select")
+            selected_sheet = st.selectbox("시트 선택 (Select Sheet)", sheet_names, key="t4_select")
             st.dataframe(data[selected_sheet], use_container_width=True)
         else:
-            st.warning("데이터가 없습니다.")
+            st.warning("로드된 데이터가 없습니다.")
 
 else:
     st.info("👈 Please upload 'BalanceSheets.xlsx'")
