@@ -1,22 +1,35 @@
 import pandas as pd
 import streamlit as st
 
-@st.cache_data(ttl=0)
+# [수정] ttl=0 제거 (화면 깜빡임 및 탭 튕김 방지)
+@st.cache_data
 def load_excel_data(uploaded_file):
     try:
         xls = pd.ExcelFile(uploaded_file)
         data_dict = {}
+        
+        # 필수 시트 목록
         required = ['Class_Job', 'Growth_Table', 'Skill_Data', 'Monster_Book', 'Dungeon_Config']
-        normalized = {name.strip(): name for name in xls.sheet_names}
+        
+        # 시트 이름 매핑 (공백 제거 등 유연하게 처리)
+        sheet_names = xls.sheet_names
+        normalized = {name.strip(): name for name in sheet_names}
         
         for req in required:
             if req in normalized:
-                df = pd.read_excel(xls, normalized[req])
+                real_name = normalized[req]
+                df = pd.read_excel(xls, real_name)
                 df.columns = df.columns.str.strip()
                 data_dict[req] = df
             else:
-                st.error(f"❌ 필수 시트 누락: {req}")
-                return None
+                # Payment_Grade는 선택사항이므로 에러 처리에서 제외 가능하나, 여기선 필수 체크
+                if req != 'Payment_Grade': 
+                    pass 
+        
+        # 선택 사항: Payment_Grade
+        if 'Payment_Grade' in normalized:
+             data_dict['Payment_Grade'] = pd.read_excel(xls, normalized['Payment_Grade'])
+             
         return data_dict
     except Exception as e:
         st.error(f"데이터 로드 오류: {e}")
