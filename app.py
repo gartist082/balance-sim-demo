@@ -7,7 +7,7 @@ import numpy as np
 
 st.set_page_config(page_title="MMORPG Balance Verification Pro", layout="wide")
 
-# 그래프 고정 설정 (줌인/아웃 방지)
+# [유지] 그래프 고정 설정
 PLOT_CONFIG = {'displayModeBar': False, 'staticPlot': True}
 
 # 세션 초기화
@@ -27,8 +27,7 @@ else:
     except: pass
 
 if data:
-    # 탭 4개 구성 (데이터 열람 복구)
-    tab1, tab2, tab3, tab4 = st.tabs(["1. 클래스 성장 검증", "2. 레이드 난이도 검증", "3. 과금 밸런스 검증", "4. 데이터 열람"])
+    tab1, tab2, tab3, tab4 = st.tabs(["1. 클래스 성장/전투 검증", "2. 레이드 난이도 검증", "3. 과금 밸런스 검증", "4. 데이터 열람"])
 
     # =========================================================================
     # TAB 1: 클래스 성장 & 전투
@@ -53,7 +52,7 @@ if data:
             with col_b1:
                 btn_single = st.form_submit_button("▶️ 단일 전투 실행 (로그 확인)")
             with col_b2:
-                btn_monte = st.form_submit_button("🎲 몬테카를로 실행 (편차 확인)")
+                btn_monte = st.form_submit_button("🎲 몬테카를로 실행 (안정성 검증)")
 
             # 로직 수행
             class_row = data['Class_Job'][data['Class_Job']['Class_Name'] == sel_class].iloc[0]
@@ -73,7 +72,8 @@ if data:
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
-                for i in range(10): # 10회
+                # 10회 반복 (유지)
+                for i in range(10):
                     p = Character(sel_level, class_row, data['Growth_Table'], data['Skill_Data'])
                     for _ in range(int(sel_time / 0.1)): p.update(0.1)
                     results.append(p.total_damage / sel_time)
@@ -101,10 +101,8 @@ if data:
             elif ratio < 0.9: st.error("⚠️ **UP 경고:** 딜이 부족합니다. 버프가 필요합니다.")
             else: st.success("✅ **Pass:** 기획 의도와 일치합니다.")
 
-            # [복구] 상세 로그 및 차트 (그래프 고정 적용)
             if res['player'].damage_log:
                 log_df = pd.DataFrame(res['player'].damage_log)
-                
                 c1, c2 = st.columns([2, 1])
                 with c1:
                     st.markdown("**📈 시간대별 누적 데미지**")
@@ -115,7 +113,7 @@ if data:
                     fig_pie = px.pie(skill_sum, values='Damage', names='Name')
                     st.plotly_chart(fig_pie, use_container_width=True, config=PLOT_CONFIG)
                 
-                with st.expander("🔎 초 단위 상세 로그 보기"):
+                with st.expander("🔎 상세 전투 로그 보기"):
                     st.dataframe(log_df)
 
         # 결과 2: 몬테카를로
@@ -150,9 +148,10 @@ if data:
     # =========================================================================
     with tab2:
         st.subheader("2. Raid & Dungeon TTK Analysis")
-        st.markdown("**검증 목표:** 파티 규모와 유저 스펙을 고려할 때, 보스를 제한 시간 내에 잡을 수 있는가?")
+        # [수정] 조건 명시 강화
+        st.markdown("**검증 목표:** 파티 규모와 유저 스펙을 고려할 때, 제한 시간 내 클리어가 가능한가?")
 
-        # [수정] 슬라이더 설명 명확화
+        # [수정] 슬라이더 설명 구체화 (80%, 100%, 120% 예시)
         with st.expander("⚙️ 시뮬레이션 조건 설정 (Setting)", expanded=True):
             party_spec_ratio = st.slider("파티원 평균 스펙 비율", 50, 150, 100, format="%d%%")
             st.info("""
@@ -190,9 +189,13 @@ if data:
 
         if st.session_state.raid_res is not None:
             df = st.session_state.raid_res
+            st.markdown("##### 📊 검증 결과 리포트")
+            
+            # [수정] 현재 시뮬레이션 조건 명시
+            st.caption(f"👉 **현재 조건:** 파티원들이 기획 의도 대비 **{party_spec_ratio}%** 효율을 낼 때를 가정합니다.")
+            
             st.dataframe(df, use_container_width=True)
             
-            # [수정] 그래프 고정
             fig = px.bar(df, x='던전명', y=['예상소요', '제한시간'], barmode='group', 
                          title=f"클리어 타임 비교 (스펙 {party_spec_ratio}% 기준)")
             st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
@@ -214,10 +217,11 @@ if data:
                 
                 if st.form_submit_button("💰 밸런스 분석 실행"):
                     base_atk = get_growth_stat(t_lv, data['Growth_Table'], 'Base_Primary_Stat')
+                    
                     bal_res = []
                     for idx, row in data['Payment_Grade'].iterrows():
                         mult = row['Stat_Multiplier']
-                        # 공식 원복: 전투력 = 배율 (선형)
+                        # 공식 유지: 선형 비례
                         cp = base_atk * mult * 100 
                         bal_res.append({"Grade": row['Grade'], "Multiplier": mult, "Combat Power": int(cp)})
                     
@@ -239,7 +243,7 @@ if data:
                     cp_ratio = h_cp / f_cp
                     lanchester_n = np.sqrt(cp_ratio)
                     
-                    # [수정] 란체스터 설명 (중립적이고 분석적인 톤)
+                    # [수정] 란체스터 해석 (사족 제거 및 기획적 제언으로 정리)
                     st.info(f"""
                     **📊 밸런스 분석 결과:**
                     * **1:1 전투:** 헤비과금은 무과금보다 스펙이 **{cp_ratio:.1f}배** 높으므로 압도적으로 승리합니다.
@@ -252,7 +256,7 @@ if data:
                 except: pass
 
     # =========================================================================
-    # TAB 4: 데이터 열람 (복구 완료)
+    # TAB 4: 데이터 열람 (유지)
     # =========================================================================
     with tab4:
         st.subheader("4. Loaded Balance Data")
