@@ -11,21 +11,27 @@ class Character:
         base_hp = get_growth_stat(level, growth_df, 'Base_HP')
         base_mp = get_growth_stat(level, growth_df, 'Base_MP')
         base_stat = get_growth_stat(level, growth_df, 'Base_Primary_Stat')
+        base_def = get_growth_stat(level, growth_df, 'Base_DEF')
         
-        # 직업 보정
         self.max_hp = base_hp * class_row['Base_HP_Mod']
         self.current_hp = self.max_hp
         self.max_mp = base_mp
         self.current_mp = self.max_mp
         
-        # 공격력
         str_atk = base_stat * class_row['Stat_Weight_Str']
         int_atk = base_stat * class_row['Stat_Weight_Int']
         self.atk = max(str_atk, int_atk)
+        self.defense = base_def * class_row['Base_Def_Mod']
         
-        # [수정] 엑셀 데이터에서 치명타율 가져오기 (없으면 기본 0.1)
-        self.crit_rate = class_row.get('Crit_Rate', 0.1)
-        self.crit_dmg = 1.5 # 치명타 피해 150% 고정 (필요시 데이터화 가능)
+        # [수정] 치명타율 로드 (값이 없으면 기본 10% 적용)
+        self.crit_rate = 0.1
+        for col in class_row.index:
+            if 'crit' in col.lower() and 'rate' in col.lower():
+                val = float(class_row[col])
+                if val > 0: self.crit_rate = val
+                break
+        
+        self.crit_dmg = 1.5
         
         # 스킬 설정
         if skills_df is not None:
@@ -65,7 +71,7 @@ class Character:
     def use_skill(self, skill):
         self.current_mp -= skill['MP_Cost']
         
-        # 치명타 로직 적용
+        # 치명타 적용
         is_crit = np.random.random() < self.crit_rate
         dmg_mult = self.crit_dmg if is_crit else 1.0
         
@@ -77,7 +83,8 @@ class Character:
             'Type': 'Skill',
             'Name': skill['Skill_Name'],
             'Damage': int(dmg),
-            'Cumulative': int(self.total_damage)
+            'Cumulative': int(self.total_damage),
+            'Is_Crit': is_crit
         })
         
         self.is_casting = True
@@ -86,8 +93,7 @@ class Character:
         return dmg
 
     def basic_attack(self):
-        if int(self.current_time * 10) % 10 == 0:
-            # 평타도 치명타 적용
+        if int(self.current_time * 10) % 10 == 0: 
             is_crit = np.random.random() < self.crit_rate
             dmg_mult = self.crit_dmg if is_crit else 1.0
             
@@ -98,7 +104,8 @@ class Character:
                 'Type': 'Attack',
                 'Name': 'Basic Attack',
                 'Damage': int(dmg),
-                'Cumulative': int(self.total_damage)
+                'Cumulative': int(self.total_damage),
+                'Is_Crit': is_crit
             })
             return dmg
         return 0
