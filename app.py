@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import numpy as np
 import time
 
@@ -35,7 +36,7 @@ def interpolate_stat(level, growth_df, target_col):
     return y1 + (y2 - y1) * (level - x1) / (x2 - x1)
 
 # -----------------------------------------------------------------------------
-# 2. 시뮬레이션 엔진 (Original Logic 복구)
+# 2. 시뮬레이션 엔진
 # -----------------------------------------------------------------------------
 class Character:
     def __init__(self, stat_row, skills_df=None, back_attack_prob=0.5, multiplier=1.0):
@@ -98,8 +99,6 @@ class Character:
             if not ready_skills.empty:
                 return self.use_skill(ready_skills.iloc[0])
         
-        # 스킬 못 쓰면 평타 (예시: 1초 쿨타임, 계수 1.0)
-        # 실제로는 평타도 스킬 리스트에 넣는 게 좋음
         return 0 
 
     def use_skill(self, skill):
@@ -155,7 +154,7 @@ else:
 if data:
     tab1, tab2, tab3 = st.tabs(["⚔️ 전투 시뮬레이션", "🛡️ 플레이 검증", "💰 밸런스 검증"])
 
-    # === TAB 1: 전투 시뮬레이션 (복구완료) ===
+    # === TAB 1: 전투 시뮬레이션 ===
     with tab1:
         st.subheader("Advanced Combat Simulator")
         stats_df = data['Stats']
@@ -193,21 +192,45 @@ if data:
         if run_monte:
             results = []
             progress = st.progress(0)
-            with st.spinner("Simulating..."):
+            status_text = st.empty()
+            
+            with st.spinner("Simulating 100 battles..."):
                 for i in range(100):
                     c = Character(tuned_stat, skills_df, back_prob)
-                    for _ in range(int(sim_time/0.1)): c.update(0.1)
+                    steps = int(sim_time / 0.1)
+                    for _ in range(steps): c.update(0.1)
                     results.append(c.total_damage/sim_time)
-                    if i % 10 == 0: progress.progress(i/100)
+                    if i % 10 == 0: 
+                        progress.progress((i + 1) / 100)
+                        status_text.text(f"Progress: {i}%")
+            
             progress.progress(100)
+            status_text.empty()
             
             avg_dps = np.mean(results)
-            st.metric("Average DPS", f"{int(avg_dps):,}")
-            fig = px.histogram(results, nbins=20, title="DPS Distribution")
-            fig.add_vline(x=avg_dps, line_dash="dash", line_color="red")
+            min_dps = np.min(results)
+            max_dps = np.max(results)
+            std_dev = np.std(results)
+            
+            st.markdown("#### 📊 Simulation Report")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Average DPS", f"{int(avg_dps):,}")
+            m2.metric("Min DPS (Unlucky)", f"{int(min_dps):,}")
+            m3.metric("Max DPS (Lucky)", f"{int(max_dps):,}")
+            m4.metric("Stability (Std Dev)", f"{int(std_dev):,}")
+            
+            fig = px.histogram(results, nbins=20, title="DPS Probability Distribution",
+                               labels={'value': 'DPS', 'count': 'Frequency'})
+            fig.add_vline(x=avg_dps, line_dash="dash", line_color="red", annotation_text="Avg")
             st.plotly_chart(fig, use_container_width=True)
+            
+            st.info("""
+            **💡 분석 가이드:**
+            * **Stability (표준편차):** 이 값이 낮을수록 운에 좌우되지 않는 **'안정적인 딜러'**입니다.
+            * **Min vs Max:** 격차가 클수록 치명타/백어택 등 **'확률 의존도'**가 높다는 뜻입니다.
+            """)
 
-    # === TAB 2: 플레이 검증 (생존 비율) ===
+    # === TAB 2: 플레이 검증 (그래프 추가) ===
     with tab2:
         st.subheader("PVE Difficulty Verification")
         if st.button("🛡️ Run Dungeon Verification"):
@@ -215,18 +238,15 @@ if data:
             res_list = []
             for idx, row in data['Dungeon_List'].iterrows():
                 lvl = row['Unlock_Level']
-                # 유저 스펙
                 u_hp = interpolate_stat(lvl, growth_df, 'Base_HP')
                 u_atk = interpolate_stat(lvl, growth_df, 'Base_ATK')
                 u_def = interpolate_stat(lvl, growth_df, 'Base_DEF')
                 
-                # 몬스터 스펙
                 m_temp = data['Monster_Template'][data['Monster_Template']['Monster_Type'] == row['Monster_Type']].iloc[0]
                 m_hp = u_hp * m_temp['HP_Ratio']
                 m_atk = u_atk * m_temp['ATK_Ratio']
                 m_def = u_def * m_temp['DEF_Ratio']
                 
-                # 생존 턴 계산 (간이)
                 user_turns = u_hp / max(1, m_atk - u_def)
                 mon_turns = m_hp / max(1, u_atk - m_def)
                 ratio = user_turns / mon_turns
@@ -235,16 +255,26 @@ if data:
                 res_list.append({
                     "Dungeon": row['Dungeon_Name'],
                     "Lvl": lvl,
-                    "Ratio": round(ratio, 2),
-                    "Target": row['Target_Survival_Ratio'],
+                    "Actual Ratio": round(ratio, 2),
+                    "Target Ratio": row['Target_Survival_Ratio'],
                     "Result": status
                 })
-            st.dataframe(pd.DataFrame(res_list))
+            
+            res_df = pd.DataFrame(res_list)
+            st.dataframe(res_df, use_container_width=True)
+            
+            # [그래프 추가] 목표(Target) vs 실제(Actual) 비교 차트
+            st.markdown("#### 📊 Difficulty Comparison Chart")
+            fig = px.bar(res_df, x='Dungeon', y=['Actual Ratio', 'Target Ratio'], barmode='group',
+                         title="생존 비율 (Target vs Actual)", labels={'value': 'Survival Ratio'})
+            fig.add_hline(y=1.0, line_dash="dash", annotation_text="Balance Point (1.0)")
+            st.plotly_chart(fig, use_container_width=True)
 
-    # === TAB 3: 밸런스 검증 (란체스터) ===
+    # === TAB 3: 밸런스 검증 (그래프 추가) ===
     with tab3:
         st.subheader("Balance & Lanchester Check")
         target_lv = st.slider("Target Level", 1, 100, 50)
+        
         if st.button("💰 Check Balance"):
             base_hp = interpolate_stat(target_lv, data['User_Growth'], 'Base_HP')
             base_atk = interpolate_stat(target_lv, data['User_Growth'], 'Base_ATK')
@@ -256,13 +286,22 @@ if data:
                 res_b.append({"Grade": row['Grade'], "CP": int(cp)})
             
             df_b = pd.DataFrame(res_b)
-            st.dataframe(df_b)
             
-            # 란체스터
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("#### 1. 등급별 전투력 (CP)")
+                st.dataframe(df_b, use_container_width=True)
+            with c2:
+                # [그래프 추가] CP 격차 막대 그래프
+                st.markdown("#### 2. CP Gap Analysis")
+                fig_cp = px.bar(df_b, x='Grade', y='CP', color='Grade', title="과금 등급별 전투력 격차")
+                st.plotly_chart(fig_cp, use_container_width=True)
+            
+            st.markdown("---")
             try:
                 h_cp = df_b[df_b['Grade'].str.contains("Heavy")]['CP'].values[0]
                 f_cp = df_b[df_b['Grade'].str.contains("Free")]['CP'].values[0]
                 n_users = np.sqrt(h_cp / f_cp)
-                st.success(f"헤비과금 1명 = 무과금 {n_users:.2f}명 (Lanchester Square Law)")
+                st.success(f"⚔️ **Lanchester Check:** 헤비과금 1명 = 무과금 {n_users:.2f}명과 대등")
             except:
                 st.warning("등급 이름에 'Heavy', 'Free'가 포함되어야 계산됩니다.")
