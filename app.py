@@ -5,12 +5,8 @@ import plotly.graph_objects as go
 import numpy as np
 import time
 
-# 페이지 기본 설정
 st.set_page_config(page_title="MMORPG Balance Verification System", layout="wide")
 
-# -----------------------------------------------------------------------------
-# 1. 데이터 로드 및 전처리
-# -----------------------------------------------------------------------------
 @st.cache_data
 def load_data(uploaded_file):
     try:
@@ -35,34 +31,22 @@ def interpolate_stat(level, growth_df, target_col):
     x2, y2 = upper.iloc[0]['Level'], upper.iloc[0][target_col]
     return y1 + (y2 - y1) * (level - x1) / (x2 - x1)
 
-# -----------------------------------------------------------------------------
-# 2. 시뮬레이션 엔진
-# -----------------------------------------------------------------------------
 class Character:
     def __init__(self, stat_row, skills_df=None, back_attack_prob=0.5, multiplier=1.0):
         self.name = stat_row.get('Class', 'User')
-        
-        # 스탯 (과금 보정 적용)
         self.base_atk = stat_row['Base_ATK'] * multiplier
         self.crit_rate = stat_row.get('Crit_Rate', 0)
         self.crit_dmg = stat_row.get('Crit_Dmg', 1.5)
         self.cdr = stat_row.get('Cooldown_Reduction', 0)
         self.back_attack_bonus = stat_row.get('Back_Attack_Bonus', 1.0)
-        
-        # 방어/체력
         self.max_hp = stat_row.get('Base_HP', 1000) * multiplier
         self.current_hp = self.max_hp
         self.defense = stat_row.get('Base_DEF', 0) * multiplier
-        
-        # 자원 (MP)
         self.max_mp = stat_row.get('Max_MP', 100)
         self.mp_regen = stat_row.get('MP_Regen', 5)
         self.current_mp = self.max_mp
-        
-        # 시뮬레이션 설정
         self.back_attack_prob = back_attack_prob
         
-        # 스킬 세팅
         if skills_df is not None:
             self.skills = skills_df[skills_df['Class'] == self.name].copy()
             self.skills['next_available'] = 0.0
@@ -121,9 +105,6 @@ class Character:
         self.skills.at[skill_idx, 'next_available'] = self.current_time + skill['Cooldown'] * (1 - self.cdr)
         return total_skill_dmg
 
-# -----------------------------------------------------------------------------
-# 3. 메인 UI
-# -----------------------------------------------------------------------------
 st.title("⚖️ MMORPG Balance Verification System")
 uploaded_file = st.sidebar.file_uploader("Upload Data", type=['xlsx'])
 default_file = "BalanceSheets.xlsx"
@@ -137,7 +118,7 @@ else:
 if data:
     tab1, tab2, tab3 = st.tabs(["⚔️ 전투 시뮬레이션", "🛡️ 플레이 검증", "💰 밸런스 검증"])
 
-    # === TAB 1: 전투 시뮬레이션 (상세 지표 복구됨) ===
+    # === TAB 1: 몬테카를로 횟수 10회로 수정 ===
     with tab1:
         st.subheader("Advanced Combat Simulator")
         stats_df = data['Stats']
@@ -158,7 +139,8 @@ if data:
 
         b1, b2 = st.columns(2)
         run_single = b1.button("▶️ Single Run")
-        run_monte = b2.button("🎲 Monte Carlo (100회)")
+        # [수정] 횟수 10회로 변경
+        run_monte = b2.button("🎲 Monte Carlo (10회)")
         
         if run_single:
             char = Character(tuned_stat, skills_df, back_prob)
@@ -175,17 +157,15 @@ if data:
             progress = st.progress(0)
             status_text = st.empty()
             
-            with st.spinner("Simulating 100 battles..."):
-                for i in range(100):
+            # [수정] 10회 반복으로 변경
+            with st.spinner("Simulating 10 battles (Rapid)..."):
+                for i in range(10):
                     c = Character(tuned_stat, skills_df, back_prob)
                     steps = int(sim_time / 0.1)
                     for _ in range(steps): c.update(0.1)
                     results.append(c.total_damage/sim_time)
-                    if i % 10 == 0: 
-                        progress.progress((i + 1) / 100)
-                        status_text.text(f"Progress: {i}%")
+                    progress.progress((i + 1) / 10)
             
-            progress.progress(100)
             status_text.empty()
             
             avg_dps = np.mean(results)
@@ -193,30 +173,24 @@ if data:
             max_dps = np.max(results)
             std_dev = np.std(results)
             
-            # [복구] 상세 지표 출력
             st.markdown("#### 📊 Simulation Report")
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Average DPS", f"{int(avg_dps):,}")
-            m2.metric("Min DPS (Unlucky)", f"{int(min_dps):,}")
-            m3.metric("Max DPS (Lucky)", f"{int(max_dps):,}")
-            m4.metric("Stability (Std Dev)", f"{int(std_dev):,}")
+            m2.metric("Min DPS", f"{int(min_dps):,}")
+            m3.metric("Max DPS", f"{int(max_dps):,}")
+            m4.metric("Stability", f"{int(std_dev):,}")
             
-            # [복구] 히스토그램
-            fig = px.histogram(results, nbins=20, title="DPS Probability Distribution",
-                               labels={'value': 'DPS', 'count': 'Frequency'})
-            fig.add_vline(x=avg_dps, line_dash="dash", line_color="red", annotation_text="Avg")
+            fig = px.histogram(results, nbins=10, title="DPS Distribution (N=10)")
+            fig.add_vline(x=avg_dps, line_dash="dash", line_color="red")
             st.plotly_chart(fig, use_container_width=True)
             
-            # [복구] 가이드 텍스트
-            st.info("""
-            **💡 분석 가이드:**
-            * **Stability (표준편차):** 이 값이 낮을수록 운에 좌우되지 않는 **'안정적인 딜러'**입니다.
-            * **Min vs Max:** 격차가 클수록 치명타/백어택 등 **'확률 의존도'**가 높다는 뜻입니다.
-            """)
+            st.info("**Tip:** 빠른 시연을 위해 시행 횟수를 10회로 조정했습니다.")
 
-    # === TAB 2: 플레이 검증 (그래프 포함) ===
+    # === TAB 2: 플레이 검증 (그래프 고도화) ===
     with tab2:
         st.subheader("PVE Difficulty Verification")
+        st.markdown("**목적:** 레벨 구간별 난이도 곡선(Difficulty Curve)이 기획 의도대로 흐르는지 검증합니다.")
+        
         if st.button("🛡️ Run Dungeon Verification"):
             growth_df = data['User_Growth']
             res_list = []
@@ -247,13 +221,20 @@ if data:
             res_df = pd.DataFrame(res_list)
             st.dataframe(res_df, use_container_width=True)
             
-            st.markdown("#### 📊 Difficulty Comparison Chart")
-            fig = px.bar(res_df, x='Dungeon', y=['Actual Ratio', 'Target Ratio'], barmode='group',
-                         title="생존 비율 (Target vs Actual)", labels={'value': 'Survival Ratio'})
-            fig.add_hline(y=1.0, line_dash="dash", annotation_text="Balance Point (1.0)")
+            # [수정] 난이도 곡선 그래프 (Line Chart) 추가
+            st.markdown("#### 📉 Difficulty Curve Analysis")
+            fig = px.line(res_df, x='Dungeon', y=['Actual Ratio', 'Target Ratio'], markers=True,
+                         title="던전별 난이도 흐름 (낮을수록 어려움)")
+            fig.add_hline(y=1.0, line_dash="dash", annotation_text="Standard (1.0)")
             st.plotly_chart(fig, use_container_width=True)
+            
+            st.info("""
+            **분석 가이드:**
+            * 그래프가 **우하향** 곡선을 그려야 정상입니다. (레벨이 오를수록 게임이 어려워져야 도전 욕구가 생김)
+            * **Actual Ratio(실제)**가 **Target Ratio(목표)**보다 낮다면, 기획 의도보다 너무 어려운 던전입니다.
+            """)
 
-    # === TAB 3: 밸런스 검증 (그래프 포함) ===
+    # === TAB 3: 밸런스 검증 ===
     with tab3:
         st.subheader("Balance & Lanchester Check")
         target_lv = st.slider("Target Level", 1, 100, 50)
@@ -272,10 +253,8 @@ if data:
             
             c1, c2 = st.columns(2)
             with c1:
-                st.markdown("#### 1. 등급별 전투력 (CP)")
                 st.dataframe(df_b, use_container_width=True)
             with c2:
-                st.markdown("#### 2. CP Gap Analysis")
                 fig_cp = px.bar(df_b, x='Grade', y='CP', color='Grade', title="과금 등급별 전투력 격차")
                 st.plotly_chart(fig_cp, use_container_width=True)
             
@@ -284,6 +263,20 @@ if data:
                 h_cp = df_b[df_b['Grade'].str.contains("Heavy")]['CP'].values[0]
                 f_cp = df_b[df_b['Grade'].str.contains("Free")]['CP'].values[0]
                 n_users = np.sqrt(h_cp / f_cp)
-                st.success(f"⚔️ **Lanchester Check:** 헤비과금 1명 = 무과금 {n_users:.2f}명과 대등")
+                
+                # 결과 메시지 강조
+                st.markdown(f"""
+                ### ⚔️ 란체스터 법칙 검증 결과
+                * **헤비과금 유저 1명**의 전투력은 무과금 유저 **{n_users:.2f}명**과 대등합니다.
+                * (CP 격차: {h_cp/f_cp:.1f}배 / 제곱근 보정 적용)
+                """)
+                
+                if n_users < 3.0:
+                    st.warning("⚠️ **경고:** 격차가 너무 작습니다. 과금 만족도가 떨어질 수 있습니다.")
+                elif n_users > 10.0:
+                    st.warning("⚠️ **경고:** 격차가 너무 큽니다. 무과금 유저의 이탈이 우려됩니다.")
+                else:
+                    st.success("✅ **적정:** 과금 효율과 생태계 유지 사이의 적절한 균형입니다.")
+                    
             except:
                 st.warning("등급 이름에 'Heavy', 'Free'가 포함되어야 계산됩니다.")
