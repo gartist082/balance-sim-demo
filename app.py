@@ -219,40 +219,57 @@ if data:
                 with st.expander("상세 로그 보기"):
                     st.dataframe(log_df)
 
-    # === TAB 2: 레이드 난이도 검증 ===
+    # =========================================================================
+    # TAB 2: 레이드 난이도 검증 (화면 튕김 방지 Fix)
+    # =========================================================================
     with tab2:
         st.subheader("2. Raid & Dungeon TTK Analysis")
+        st.markdown("**검증 목표:** 파티 규모와 유저 스펙을 고려할 때, 보스를 제한 시간 내에 잡을 수 있는가?")
         
-        if st.button("🛡️ Run Raid Simulation"):
-            if 'Dungeon_Config' not in data:
-                st.error("Dungeon_Config 시트가 없습니다.")
-            else:
-                dungeon_res = []
-                for idx, row in data['Dungeon_Config'].iterrows():
-                    d_name = row['Dungeon_Name']
-                    boss_id = row['Boss_Mob_ID']
-                    min_lv = row['Min_Level']
-                    party_size = row['Rec_Party_Size']
-                    time_limit = row['Time_Limit_Sec']
+        # [수정] 폼(Form)을 사용하여 버튼 클릭 시 리로드 방지
+        with st.form("raid_form"):
+            run_raid = st.form_submit_button("🛡️ Run Raid Simulation")
+            
+            if run_raid:
+                if 'Dungeon_Config' not in data:
+                    st.error("Dungeon_Config 시트가 없습니다.")
+                else:
+                    dungeon_res = []
+                    for idx, row in data['Dungeon_Config'].iterrows():
+                        d_name = row['Dungeon_Name']
+                        boss_id = row['Boss_Mob_ID']
+                        min_lv = row['Min_Level']
+                        party_size = row['Rec_Party_Size']
+                        time_limit = row['Time_Limit_Sec']
+                        
+                        # 몬스터 정보
+                        mob_row = data['Monster_Book'][data['Monster_Book']['Mob_ID'] == boss_id].iloc[0]
+                        boss_hp = mob_row['HP']
+                        
+                        # 유저 스펙
+                        std_dps = get_growth_stat(min_lv, data['Growth_Table'], 'Standard_DPS')
+                        party_dps = std_dps * party_size
+                        
+                        # TTK 계산
+                        ttk_sec = boss_hp / party_dps
+                        
+                        status = "🟢 Clear" if ttk_sec <= time_limit else "🔴 Fail"
+                        
+                        dungeon_res.append({
+                            "Dungeon": d_name,
+                            "Lv": min_lv,
+                            "Party": f"{party_size}인",
+                            "Boss HP": f"{boss_hp:,}",
+                            "TTK (Sec)": int(ttk_sec),
+                            "Limit (Sec)": time_limit,
+                            "Result": status
+                        })
+                        
+                    res_df = pd.DataFrame(dungeon_res)
+                    st.dataframe(res_df, use_container_width=True)
                     
-                    mob_row = data['Monster_Book'][data['Monster_Book']['Mob_ID'] == boss_id].iloc[0]
-                    boss_hp = mob_row['HP']
-                    
-                    std_dps = get_growth_stat(min_lv, data['Growth_Table'], 'Standard_DPS')
-                    party_dps = std_dps * party_size
-                    ttk_sec = boss_hp / party_dps
-                    
-                    status = "🟢 Clear" if ttk_sec <= time_limit else "🔴 Fail"
-                    dungeon_res.append({
-                        "Dungeon": d_name, "Lv": min_lv, "Party": f"{party_size}인",
-                        "Boss HP": f"{boss_hp:,}", "TTK (Sec)": int(ttk_sec),
-                        "Limit (Sec)": time_limit, "Result": status
-                    })
-                    
-                res_df = pd.DataFrame(dungeon_res)
-                st.dataframe(res_df, use_container_width=True)
-                fig = px.bar(res_df, x='Dungeon', y=['TTK (Sec)', 'Limit (Sec)'], barmode='group', title="예상 클리어 타임 비교")
-                st.plotly_chart(fig, use_container_width=True)
+                    fig = px.bar(res_df, x='Dungeon', y=['TTK (Sec)', 'Limit (Sec)'], barmode='group', title="예상 클리어 타임 비교")
+                    st.plotly_chart(fig, use_container_width=True)
 
     # === TAB 3: 데이터 열람 ===
     with tab3:
