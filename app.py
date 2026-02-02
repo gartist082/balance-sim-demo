@@ -67,7 +67,7 @@ class Character:
             self.skills = skills_df[skills_df['Class'] == self.name].copy()
             self.skills['next_available'] = 0.0
         else:
-            self.skills = pd.DataFrame() # 스킬 없음
+            self.skills = pd.DataFrame()
 
         self.current_time = 0.0
         self.is_casting = False
@@ -77,65 +77,48 @@ class Character:
 
     def update(self, time_step):
         self.current_time += time_step
-        
-        # MP 회복
         if self.current_mp < self.max_mp:
             self.current_mp += self.mp_regen * time_step
         
-        # 행동 불가(캐스팅) 확인
         if self.is_casting:
             if self.current_time >= self.cast_end_time:
                 self.is_casting = False
             else:
                 return 0
 
-        # 사용 가능 스킬 탐색 (쿨타임 & MP)
         if not self.skills.empty:
             ready_skills = self.skills[
                 (self.skills['next_available'] <= self.current_time) &
                 (self.skills['MP_Cost'] <= self.current_mp)
             ].sort_values(by='Damage_Coef', ascending=False)
-            
             if not ready_skills.empty:
                 return self.use_skill(ready_skills.iloc[0])
-        
         return 0 
 
     def use_skill(self, skill):
         skill_idx = skill.name
         self.current_mp -= skill['MP_Cost']
-        
         total_skill_dmg = 0
         hit_count = int(skill.get('Hit_Count', 1))
         
-        # 다단히트 로직
         for _ in range(hit_count):
             is_crit = np.random.random() < self.crit_rate
             dmg_mult = self.crit_dmg if is_crit else 1.0
-            
-            # 백어택 로직
             if skill.get('Is_BackAttack', False) and (np.random.random() < self.back_attack_prob):
                 dmg_mult *= self.back_attack_bonus
-            
-            # 데미지 계산
             damage = (self.base_atk * skill['Damage_Coef'] / hit_count) * dmg_mult
             total_skill_dmg += damage
             
         self.total_damage += total_skill_dmg
-        
-        # 로그
         self.damage_log.append({
             'Time': round(self.current_time, 2),
             'Skill': skill['Skill_Name'],
             'Damage': int(total_skill_dmg),
             'Cumulative': int(self.total_damage)
         })
-        
-        # 상태 업데이트
         self.is_casting = True
         self.cast_end_time = self.current_time + skill['Cast_Time']
         self.skills.at[skill_idx, 'next_available'] = self.current_time + skill['Cooldown'] * (1 - self.cdr)
-        
         return total_skill_dmg
 
 # -----------------------------------------------------------------------------
@@ -154,7 +137,7 @@ else:
 if data:
     tab1, tab2, tab3 = st.tabs(["⚔️ 전투 시뮬레이션", "🛡️ 플레이 검증", "💰 밸런스 검증"])
 
-    # === TAB 1: 전투 시뮬레이션 ===
+    # === TAB 1: 전투 시뮬레이션 (상세 지표 복구됨) ===
     with tab1:
         st.subheader("Advanced Combat Simulator")
         stats_df = data['Stats']
@@ -163,7 +146,6 @@ if data:
         c_class = st.selectbox("Class", stats_df['Class'].unique())
         stat_row = stats_df[stats_df['Class'] == c_class].iloc[0]
         
-        # A/B Test 설정
         col1, col2 = st.columns(2)
         with col1:
             adj_atk = st.number_input("Base ATK", value=int(stat_row['Base_ATK']))
@@ -171,7 +153,6 @@ if data:
         with col2:
             sim_time = st.slider("Sim Duration (sec)", 30, 180, 60)
             
-        # 튜닝된 스탯 적용
         tuned_stat = stat_row.copy()
         tuned_stat['Base_ATK'] = adj_atk
 
@@ -212,6 +193,7 @@ if data:
             max_dps = np.max(results)
             std_dev = np.std(results)
             
+            # [복구] 상세 지표 출력
             st.markdown("#### 📊 Simulation Report")
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Average DPS", f"{int(avg_dps):,}")
@@ -219,18 +201,20 @@ if data:
             m3.metric("Max DPS (Lucky)", f"{int(max_dps):,}")
             m4.metric("Stability (Std Dev)", f"{int(std_dev):,}")
             
+            # [복구] 히스토그램
             fig = px.histogram(results, nbins=20, title="DPS Probability Distribution",
                                labels={'value': 'DPS', 'count': 'Frequency'})
             fig.add_vline(x=avg_dps, line_dash="dash", line_color="red", annotation_text="Avg")
             st.plotly_chart(fig, use_container_width=True)
             
+            # [복구] 가이드 텍스트
             st.info("""
             **💡 분석 가이드:**
             * **Stability (표준편차):** 이 값이 낮을수록 운에 좌우되지 않는 **'안정적인 딜러'**입니다.
             * **Min vs Max:** 격차가 클수록 치명타/백어택 등 **'확률 의존도'**가 높다는 뜻입니다.
             """)
 
-    # === TAB 2: 플레이 검증 (그래프 추가) ===
+    # === TAB 2: 플레이 검증 (그래프 포함) ===
     with tab2:
         st.subheader("PVE Difficulty Verification")
         if st.button("🛡️ Run Dungeon Verification"):
@@ -263,14 +247,13 @@ if data:
             res_df = pd.DataFrame(res_list)
             st.dataframe(res_df, use_container_width=True)
             
-            # [그래프 추가] 목표(Target) vs 실제(Actual) 비교 차트
             st.markdown("#### 📊 Difficulty Comparison Chart")
             fig = px.bar(res_df, x='Dungeon', y=['Actual Ratio', 'Target Ratio'], barmode='group',
                          title="생존 비율 (Target vs Actual)", labels={'value': 'Survival Ratio'})
             fig.add_hline(y=1.0, line_dash="dash", annotation_text="Balance Point (1.0)")
             st.plotly_chart(fig, use_container_width=True)
 
-    # === TAB 3: 밸런스 검증 (그래프 추가) ===
+    # === TAB 3: 밸런스 검증 (그래프 포함) ===
     with tab3:
         st.subheader("Balance & Lanchester Check")
         target_lv = st.slider("Target Level", 1, 100, 50)
@@ -292,7 +275,6 @@ if data:
                 st.markdown("#### 1. 등급별 전투력 (CP)")
                 st.dataframe(df_b, use_container_width=True)
             with c2:
-                # [그래프 추가] CP 격차 막대 그래프
                 st.markdown("#### 2. CP Gap Analysis")
                 fig_cp = px.bar(df_b, x='Grade', y='CP', color='Grade', title="과금 등급별 전투력 격차")
                 st.plotly_chart(fig_cp, use_container_width=True)
