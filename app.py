@@ -17,8 +17,19 @@ if 'view_df' not in st.session_state: st.session_state.view_df = None
 
 st.title("⚖️ MMORPG Balance Verification System")
 
-uploaded_file = st.sidebar.file_uploader("Upload Data (BalanceSheets.xlsx)", type=['xlsx'])
-default_file = "BalanceSheets.xlsx"
+# -----------------------------------------------------------------------------
+# [핵심] 사이드바 구성 (파일 업로드 + 라디오 버튼 네비게이션)
+# -----------------------------------------------------------------------------
+with st.sidebar:
+    st.header("📂 설정 및 메뉴")
+    uploaded_file = st.file_uploader("Upload Data (BalanceSheets.xlsx)", type=['xlsx'])
+    default_file = "BalanceSheets.xlsx"
+    
+    st.divider()
+    
+    # 탭 대신 라디오 버튼 사용 (화면 리로드돼도 선택값 유지됨)
+    menu = ["1. 클래스 성장/전투 검증", "2. 레이드 난이도 검증", "3. 과금 밸런스 검증", "4. 데이터 열람"]
+    choice = st.radio("메뉴 선택", menu)
 
 data = None
 if uploaded_file: data = load_excel_data(uploaded_file)
@@ -27,12 +38,10 @@ else:
     except: pass
 
 if data:
-    tab1, tab2, tab3, tab4 = st.tabs(["1. 클래스 성장/전투 검증", "2. 레이드 난이도 검증", "3. 과금 밸런스 검증", "4. 데이터 열람"])
-
     # =========================================================================
-    # TAB 1: 클래스 성장 & 전투
+    # VIEW 1: 클래스 성장 & 전투
     # =========================================================================
-    with tab1:
+    if choice == menu[0]:
         st.subheader("1. Class Growth & Combat Simulation")
         st.info("📝 **검증 목적:** 기획된 '목표 DPS' 달성 여부와 확률 변수(치명타)에 따른 딜 편차를 확인합니다.")
 
@@ -138,23 +147,15 @@ if data:
             st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
     # =========================================================================
-    # TAB 2: 레이드 난이도 검증 (수정됨)
+    # VIEW 2: 레이드 난이도 검증
     # =========================================================================
-    with tab2:
+    elif choice == menu[1]:
         st.subheader("2. Raid & Dungeon TTK Analysis")
         st.markdown("**검증 목표:** 파티 규모와 유저 스펙을 고려할 때, 제한 시간 내 클리어가 가능한가?")
 
         with st.form("raid_form"):
-            # [수정] 선배님 요청 반영: 용어 수정 및 범위 50~150% 변경
             party_spec_ratio = st.slider("파티원 평균 스펙 비율", 50, 150, 100, format="%d%%")
-            
-            # [수정] 가이드 문구 수정 (미숙 제거)
-            st.caption("""
-            💡 **설정 가이드:**
-            * **100%:** 기획된 'Standard DPS'를 정확히 낼 때.
-            * **50%:** 장비 수준이 부족하거나 컨트롤 이슈가 있을 때.
-            * **150%:** 고강화 장비 또는 최적의 시너지 조합일 때.
-            """)
+            st.caption("💡 100%=정상 스펙, 50%=컨트롤 미숙/저스펙, 150%=고스펙/시너지")
             
             if st.form_submit_button("🛡️ 레이드 검증 실행"):
                 if 'Dungeon_Config' not in data: st.error("데이터 누락"); st.stop()
@@ -185,15 +186,14 @@ if data:
             st.caption(f"👉 **현재 조건:** 파티원들이 기획 의도 대비 **{party_spec_ratio}%** 효율을 낼 때를 가정합니다.")
             st.dataframe(df, use_container_width=True)
             
-            # [수정] 변수명 일치 (TTK, Limit) & 그래프 고정
             fig = px.bar(df, x='던전명', y=['TTK', 'Limit'], barmode='group', 
                          title=f"클리어 타임 비교")
             st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
     # =========================================================================
-    # TAB 3: 과금 밸런스 검증 (수정됨)
+    # VIEW 3: 과금 밸런스 검증
     # =========================================================================
-    with tab3:
+    elif choice == menu[2]:
         st.subheader("3. Payment & Lanchester Analysis")
         st.markdown("**검증 목표:** 과금 등급간 스탯 격차와 다대일 전투 효율 진단")
 
@@ -214,13 +214,11 @@ if data:
                     
                     st.session_state.bal_df = pd.DataFrame(bal_res)
 
-            # [수정] None 체크 추가 (에러 방지)
             if st.session_state.bal_df is not None:
                 df_b = st.session_state.bal_df
                 c1, c2 = st.columns(2)
                 with c1: st.dataframe(df_b, use_container_width=True)
                 with c2:
-                    # [수정] 변수명 일치 (CP) & 그래프 고정
                     fig = px.bar(df_b, x='Grade', y='CP', color='Grade', title="전투력(CP) 격차")
                     st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
                 
@@ -237,9 +235,9 @@ if data:
                 except: pass
 
     # =========================================================================
-    # TAB 4: 데이터 열람
+    # VIEW 4: 데이터 열람
     # =========================================================================
-    with tab4:
+    elif choice == menu[3]:
         st.subheader("4. Loaded Balance Data")
         
         with st.form("data_view_form"):
