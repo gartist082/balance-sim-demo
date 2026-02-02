@@ -6,6 +6,7 @@ from sim_engine import Character
 import numpy as np
 
 st.set_page_config(page_title="MMORPG Balance Verification Pro", layout="wide")
+# 그래프 고정 설정 (이 변수는 st.plotly_chart 안에서만 써야 함)
 PLOT_CONFIG = {'displayModeBar': False, 'staticPlot': True}
 
 # 세션 초기화
@@ -113,6 +114,7 @@ if data:
                     st.markdown("**🥧 스킬 비중**")
                     skill_sum = log_df.groupby('Name')['Damage'].sum().reset_index()
                     fig_pie = px.pie(skill_sum, values='Damage', names='Name')
+                    # config는 반드시 st.plotly_chart 안에 있어야 함
                     st.plotly_chart(fig_pie, use_container_width=True, config=PLOT_CONFIG)
                 
                 with st.expander("🔎 상세 로그 보기"):
@@ -138,7 +140,7 @@ if data:
             st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
     # =========================================================================
-    # TAB 2: 레이드 난이도 검증 (변수명 수정 완료)
+    # TAB 2: 레이드 난이도 검증 (변수명 통일 완료: TTK, Limit)
     # =========================================================================
     with tab2:
         st.subheader("2. Raid & Dungeon TTK Analysis")
@@ -161,13 +163,14 @@ if data:
                     limit = row['Time_Limit_Sec']
                     
                     status = "🟢 Clear" if ttk <= limit else "🔴 Fail"
+                    # [수정] 영문 Key로 통일 (그래프 에러 방지)
                     dungeon_res.append({
-                        "던전명": row['Dungeon_Name'],
-                        "권장Lv": int(row['Min_Level']),
-                        "보스체력": f"{mob['HP']:,}",
-                        "TTK (Sec)": int(ttk),
-                        "Limit (Sec)": limit,
-                        "판정": status
+                        "Dungeon": row['Dungeon_Name'],
+                        "Lv": int(row['Min_Level']),
+                        "Boss HP": f"{mob['HP']:,}",
+                        "TTK": int(ttk),
+                        "Limit": limit,
+                        "Result": status
                     })
                 st.session_state.raid_res = pd.DataFrame(dungeon_res)
 
@@ -177,13 +180,14 @@ if data:
             st.caption(f"👉 **현재 조건:** 파티원들이 기획 의도 대비 **{party_spec_ratio}%** 효율을 낼 때를 가정합니다.")
             st.dataframe(df, use_container_width=True)
             
-            # [수정] y축 이름을 데이터프레임 컬럼명과 일치시킴
-            fig = px.bar(df, x='던전명', y=['TTK (Sec)', 'Limit (Sec)'], barmode='group', 
+            # [수정] 위에서 저장한 Key(TTK, Limit)와 정확히 일치시킴
+            fig = px.bar(df, x='Dungeon', y=['TTK', 'Limit'], barmode='group', 
                          title=f"클리어 타임 비교")
+            # [수정] config 위치 수정 (st.plotly_chart 안으로)
             st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
     # =========================================================================
-    # TAB 3: 과금 밸런스 검증 (변수명 수정 완료)
+    # TAB 3: 과금 밸런스 검증 (변수명 통일 완료: CP)
     # =========================================================================
     with tab3:
         st.subheader("3. Payment & Lanchester Analysis")
@@ -202,7 +206,8 @@ if data:
                     for idx, row in data['Payment_Grade'].iterrows():
                         mult = row['Stat_Multiplier']
                         cp = base_atk * mult * 100 
-                        bal_res.append({"Grade": row['Grade'], "Multiplier": mult, "Combat Power": int(cp)})
+                        # [수정] 영문 Key로 통일: CP
+                        bal_res.append({"Grade": row['Grade'], "Multiplier": mult, "CP": int(cp)})
                     
                     st.session_state.bal_df = pd.DataFrame(bal_res)
 
@@ -211,13 +216,15 @@ if data:
                 c1, c2 = st.columns(2)
                 with c1: st.dataframe(df_b, use_container_width=True)
                 with c2:
-                    # [수정] y축 이름을 데이터프레임 컬럼명 'Combat Power'로 일치시킴
-                    fig = px.bar(df_b, x='Grade', y='Combat Power', color='Grade', title="전투력(CP) 격차")
+                    # [수정] 위에서 저장한 Key(CP)와 정확히 일치시킴
+                    fig = px.bar(df_b, x='Grade', y='CP', color='Grade', title="전투력(CP) 격차")
+                    # [수정] config 위치 수정
                     st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
                 
                 try:
-                    h_cp = df_b[df_b['Grade'].str.contains("Heavy", case=False)]['Combat Power'].values[0]
-                    f_cp = df_b[df_b['Grade'].str.contains("Free", case=False)]['Combat Power'].values[0]
+                    # [수정] Key 일치 (CP)
+                    h_cp = df_b[df_b['Grade'].str.contains("Heavy", case=False)]['CP'].values[0]
+                    f_cp = df_b[df_b['Grade'].str.contains("Free", case=False)]['CP'].values[0]
                     ratio = np.sqrt(h_cp / f_cp)
                     
                     st.info(f"""
