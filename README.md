@@ -33,15 +33,18 @@ balance-sim-demo/
 
 ### 1. 클래스 성장 및 전투 검증 (Class Growth & Combat Sim)
 *   **Time-based Engine:** 0.1초 단위 시뮬레이션을 통해 쿨타임, 시전 시간, 자원(MP) 회복 등 실제 전투 리듬을 정밀하게 구현했습니다.
-*   **Monte Carlo Analysis:** 치명타(Crit) 등 확률 변수가 포함된 전투를 반복 시행하여, DPS의 **표준편차(Stability)**와 최소/최대 격차를 검증합니다.
+*   **Monte Carlo Analysis:** 치명타(Crit) 등 확률 변수가 포함된 전투를 반복 시행하여, DPS의 **표준편차(Stability)**와
+최소/최대 격차를 검증합니다.
 
 ### 2. 레이드 난이도 검증 (Raid TTK Analysis)
 *   **TTK (Time To Kill) 모델링:** 보스 체력과 파티원들의 표준 스펙(Standard DPS)을 대조하여 예상 클리어 타임을 산출합니다.
-*   **Variable Scenario:** 파티원 스펙 수준(50%~150%) 조절을 통해, 컨트롤 미숙이나 장비 부족 상황에서의 클리어 가능 여부(Fail/Clear)를 진단합니다.
+*   **Variable Scenario:** 파티원 스펙 수준(50%~150%) 조절을 통해, 컨트롤 미숙이나 장비 부족 상황에서의
+ 클리어 가능 여부(Fail/Clear)를 진단합니다.
 
 ### 3. 과금 밸런스 및 생태계 진단 (Payment & Ecosystem)
 *   **Ecosystem Balance:** 과금 등급별(무과금 vs 핵과금) 스펙 격차를 시각화합니다.
-*   **Lanchester's Law:** 란체스터 제2법칙(제곱 법칙)을 적용하여, RVR(다대일 전투) 환경에서의 **'실질적 교환비(Exchange Ratio)'**를 이론적으로 도출합니다.
+*   **Lanchester's Law:** 란체스터 제2법칙(제곱 법칙)을 적용하여, RVR(다대일 전투) 환경에서의 **'실질적 교환비(Exchange Ratio)'**를
+ 이론적으로 도출합니다.
 
 ---
 
