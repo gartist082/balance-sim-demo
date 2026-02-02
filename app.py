@@ -11,8 +11,10 @@ st.set_page_config(page_title="MMORPG Balance Verification Pro", layout="wide")
 if 'growth_result' not in st.session_state: st.session_state.growth_result = None
 if 'raid_result' not in st.session_state: st.session_state.raid_result = None
 
+# UI 타이틀
 st.title("⚖️ MMORPG Balance Verification System")
 
+# 파일 업로드
 uploaded_file = st.sidebar.file_uploader("Upload Data (BalanceSheets.xlsx)", type=['xlsx'])
 default_file = "BalanceSheets.xlsx"
 
@@ -26,12 +28,10 @@ if data:
     tab1, tab2, tab3 = st.tabs(["1. 클래스 성장 검증", "2. 레이드 난이도 검증", "3. 과금 밸런스 검증"])
 
     # =========================================================================
-    # TAB 1: 클래스 성장 검증 (Context 강화)
+    # TAB 1: 클래스 성장 검증
     # =========================================================================
     with tab1:
         st.subheader("1. Class Growth & DPS Simulation")
-        
-        # [설명 추가] 현재 어떤 조건인지 명시
         st.info("📝 **테스트 조건:** 특정 레벨의 캐릭터가 '샌드백(방어력 0)'을 공격했을 때의 이론상 최대 DPS를 측정합니다.")
 
         with st.form("growth_form"):
@@ -43,7 +43,7 @@ if data:
             with c2: sel_level = st.slider("테스트 레벨 (Level)", 1, 60, 60)
             with c3: sel_time = st.slider("전투 시간 (Time)", 10, 300, 60)
             
-            # [UI 개선] 버튼 위에 현재 스펙 요약 표시
+            # 실시간 목표값 표시
             target_dps = get_growth_stat(sel_level, data['Growth_Table'], 'Standard_DPS')
             st.markdown(f"👉 **검증 목표:** 레벨 {sel_level}의 기획 의도 표준 DPS는 **{int(target_dps):,}** 입니다.")
             
@@ -65,8 +65,6 @@ if data:
 
         if st.session_state.growth_result:
             res = st.session_state.growth_result
-            
-            # [UI 개선] 결과 해석을 텍스트로 풀어서 설명
             ratio = res['actual'] / res['target'] if res['target'] > 0 else 0
             
             c1, c2, c3 = st.columns(3)
@@ -87,13 +85,12 @@ if data:
                 st.line_chart(log_df.set_index('Time')['Cumulative'])
 
     # =========================================================================
-    # TAB 2: 레이드 난이도 검증 (데이터 미리보기 추가)
+    # TAB 2: 레이드 난이도 검증
     # =========================================================================
     with tab2:
         st.subheader("2. Raid & Dungeon TTK Analysis")
         st.markdown("**검증 목표:** 파티 규모와 유저 스펙을 고려할 때, 보스를 제한 시간 내에 잡을 수 있는가?")
 
-        # [UI 개선] 시뮬레이션 대상 목록을 미리 보여줌
         if 'Dungeon_Config' in data:
             st.markdown("##### 📋 검증 대상 던전 목록 (Input Data)")
             st.dataframe(data['Dungeon_Config'][['Dungeon_Name', 'Min_Level', 'Rec_Party_Size', 'Time_Limit_Sec']], use_container_width=True)
@@ -131,14 +128,13 @@ if data:
             df = st.session_state.raid_result
             st.dataframe(df, use_container_width=True)
             
-            # 그래프
             fig = px.bar(df, x='던전명', y=['예상 소요시간', '제한 시간'], barmode='group', title="클리어 타임 비교 (TTK Analysis)")
             st.plotly_chart(fig, use_container_width=True)
             
             st.info("**해석:** '예상 소요시간'이 '제한 시간'보다 길면 막대기가 더 높게 표시되며, 이는 **스펙 부족 또는 보스 체력 과다**를 의미합니다.")
 
     # =========================================================================
-    # TAB 3: 과금 밸런스 검증 (안내 강화)
+    # TAB 3: 과금 밸런스 검증 (기획적 해석 추가)
     # =========================================================================
     with tab3:
         st.subheader("3. Payment & Lanchester Analysis")
@@ -146,13 +142,6 @@ if data:
 
         if 'Payment_Grade' not in data:
             st.error("❌ 'Payment_Grade' 시트가 없습니다. 엑셀에 시트를 추가하고 다시 업로드해주세요.")
-            st.code("""
-            [Payment_Grade 시트 작성 예시]
-            Grade | Stat_Multiplier | Note
-            Free  | 1.0             | 무과금
-            Light | 2.5             | 소과금
-            Heavy | 10.0            | 핵과금
-            """)
         else:
             with st.form("balance_form"):
                 t_lv = st.slider("비교할 레벨 구간 (Target Level)", 1, 60, 60)
@@ -184,15 +173,22 @@ if data:
                 try:
                     h_cp = df_b[df_b['Grade'].str.contains("Heavy", case=False)]['Combat Power'].values[0]
                     f_cp = df_b[df_b['Grade'].str.contains("Free", case=False)]['Combat Power'].values[0]
-                    ratio = np.sqrt(h_cp / f_cp)
+                    
+                    # 전투력 비율
+                    cp_ratio = h_cp / f_cp 
+                    # 란체스터 교환비 (제곱근)
+                    lanchester_n = np.sqrt(cp_ratio)
                     
                     st.markdown("---")
                     st.subheader("⚔️ 최종 진단 (Lanchester's Law)")
-                    st.success(f"""
-                    **"헤비과금 유저 1명은 무과금 유저 {ratio:.2f}명과 대등합니다."**
+                    st.info(f"""
+                    **[시뮬레이션 결과]**
+                    * **전투력 격차:** 헤비과금 유저는 무과금 유저보다 스펙이 **{cp_ratio:.1f}배** 높습니다.
+                    * **실질 교환비(N):** 하지만 다대일 전투(일점사 환경)를 고려한 란체스터 제2법칙에 따르면, **헤비과금 1명은 무과금 약 {lanchester_n:.1f}명과 대등**하게 싸울 수 있습니다.
                     
-                    * 단순 전투력 차이는 **{h_cp/f_cp:.1f}배**이지만,
-                    * 다대일 전투(란체스터 제2법칙)를 적용하면 실질적인 교환비는 **{ratio:.2f}명**입니다.
+                    **💡 기획적 시사점 (Insight):**
+                    단순 스탯 차이가 15배나 나더라도, 다수의 협공 앞에서는 4명을 당해내기 어렵습니다.
+                    고과금 유저에게 확실한 '무쌍(일당백)' 경험을 제공하려면, 단순 스탯 상향 외에 **광역 피해량(AoE) 증가**나 **받는 피해 감소(Damage Reduction)** 옵션이 필수적임을 시사합니다.
                     """)
                 except:
                     st.warning("⚠️ 정확한 진단을 위해 'Grade' 컬럼에 'Free'와 'Heavy'가 포함되어야 합니다.")
