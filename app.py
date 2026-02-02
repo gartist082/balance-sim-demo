@@ -13,7 +13,7 @@ if 'growth_res' not in st.session_state: st.session_state.growth_res = None
 if 'monte_res' not in st.session_state: st.session_state.monte_res = None
 if 'raid_res' not in st.session_state: st.session_state.raid_res = None
 if 'bal_df' not in st.session_state: st.session_state.bal_df = None
-if 'view_df' not in st.session_state: st.session_state.view_df = None # 데이터 열람용 세션
+if 'view_df' not in st.session_state: st.session_state.view_df = None
 
 st.title("⚖️ MMORPG Balance Verification System")
 
@@ -36,7 +36,6 @@ if data:
         st.subheader("1. Class Growth & Combat Simulation")
         st.info("📝 **검증 목적:** 기획된 '목표 DPS' 달성 여부와 확률 변수(치명타)에 따른 딜 편차를 확인합니다.")
 
-        # [수정] 모든 입력을 폼 안으로 이동
         with st.form("combat_form"):
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -46,27 +45,24 @@ if data:
             with c2: sel_level = st.slider("테스트 레벨", 1, 60, 60)
             with c3: sel_time = st.slider("전투 시간 (초)", 10, 300, 60)
             
-            # 튜닝 옵션 (폼 내부로 이동)
+            # 튜닝 옵션
             st.markdown("---")
             st.caption("⚙️ **스탯 튜닝 (Optional):**")
             tc1, tc2 = st.columns(2)
             with tc1: adj_atk = st.number_input("공격력 보정 (%)", 10, 500, 100)
             with tc2: adj_crit = st.slider("치명타율 추가 (%)", 0, 50, 0)
 
-            # 버튼
             col_b1, col_b2 = st.columns(2)
             with col_b1:
                 btn_single = st.form_submit_button("▶️ 단일 전투 실행")
             with col_b2:
                 btn_monte = st.form_submit_button("🎲 몬테카를로 실행")
 
-            # 로직 수행
             class_row = data['Class_Job'][data['Class_Job']['Class_Name'] == sel_class].iloc[0]
             target_dps = get_growth_stat(sel_level, data['Growth_Table'], 'Standard_DPS')
             
             if btn_single:
                 player = Character(sel_level, class_row, data['Growth_Table'], data['Skill_Data'])
-                # 튜닝 적용
                 player.atk = player.atk * (adj_atk / 100.0)
                 player.crit_rate += (adj_crit / 100.0)
                 
@@ -80,7 +76,6 @@ if data:
 
             if btn_monte:
                 results = []
-                # 폼 안에서는 progress 사용에 제약이 있어 spinner로 대체
                 with st.spinner("Simulating 10 battles..."):
                     for i in range(10):
                         p = Character(sel_level, class_row, data['Growth_Table'], data['Skill_Data'])
@@ -143,14 +138,13 @@ if data:
             st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
     # =========================================================================
-    # TAB 2: 레이드 난이도 검증 (폼 적용 완료)
+    # TAB 2: 레이드 난이도 검증 (변수명 수정 완료)
     # =========================================================================
     with tab2:
         st.subheader("2. Raid & Dungeon TTK Analysis")
         st.markdown("**검증 목표:** 파티 규모와 유저 스펙을 고려할 때, 제한 시간 내 클리어가 가능한가?")
 
         with st.form("raid_form"):
-            # [수정] 슬라이더를 폼 안으로 이동 -> 조작해도 탭 안 튕김
             party_spec_ratio = st.slider("파티원 평균 스펙 비율", 50, 150, 100, format="%d%%")
             st.caption("💡 100%=정상 스펙, 80%=컨트롤 미숙, 120%=고스펙")
             
@@ -171,8 +165,8 @@ if data:
                         "던전명": row['Dungeon_Name'],
                         "권장Lv": int(row['Min_Level']),
                         "보스체력": f"{mob['HP']:,}",
-                        "예상소요": int(ttk),
-                        "제한시간": limit,
+                        "TTK (Sec)": int(ttk),
+                        "Limit (Sec)": limit,
                         "판정": status
                     })
                 st.session_state.raid_res = pd.DataFrame(dungeon_res)
@@ -183,12 +177,13 @@ if data:
             st.caption(f"👉 **현재 조건:** 파티원들이 기획 의도 대비 **{party_spec_ratio}%** 효율을 낼 때를 가정합니다.")
             st.dataframe(df, use_container_width=True)
             
-            fig = px.bar(df, x='던전명', y=['예상소요', '제한시간'], barmode='group', 
+            # [수정] y축 이름을 데이터프레임 컬럼명과 일치시킴
+            fig = px.bar(df, x='던전명', y=['TTK (Sec)', 'Limit (Sec)'], barmode='group', 
                          title=f"클리어 타임 비교")
             st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
     # =========================================================================
-    # TAB 3: 과금 밸런스 검증 (폼 적용 완료)
+    # TAB 3: 과금 밸런스 검증 (변수명 수정 완료)
     # =========================================================================
     with tab3:
         st.subheader("3. Payment & Lanchester Analysis")
@@ -197,7 +192,6 @@ if data:
         if 'Payment_Grade' not in data:
             st.error("❌ 'Payment_Grade' 시트가 없습니다.")
         else:
-            # [수정] 슬라이더를 폼 안으로 이동
             with st.form("balance_form"):
                 t_lv = st.slider("비교할 레벨 구간", 1, 60, 60)
                 check_bal = st.form_submit_button("💰 밸런스 분석 실행")
@@ -217,7 +211,8 @@ if data:
                 c1, c2 = st.columns(2)
                 with c1: st.dataframe(df_b, use_container_width=True)
                 with c2:
-                    fig = px.bar(df_b, x='Grade', y='Combat Power', color='Grade', title="전투력 격차")
+                    # [수정] y축 이름을 데이터프레임 컬럼명 'Combat Power'로 일치시킴
+                    fig = px.bar(df_b, x='Grade', y='Combat Power', color='Grade', title="전투력(CP) 격차")
                     st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
                 
                 try:
@@ -233,13 +228,11 @@ if data:
                 except: pass
 
     # =========================================================================
-    # TAB 4: 데이터 열람 (폼 적용 완료)
+    # TAB 4: 데이터 열람
     # =========================================================================
     with tab4:
         st.subheader("4. Loaded Balance Data")
         
-        # [수정] 데이터 열람도 폼으로 감싸서 탭 튕김 방지
-        # (Selectbox를 움직이면 폼 내부라 리로드 안됨 -> '조회' 버튼 눌러야 갱신)
         with st.form("data_view_form"):
             sheet_names = list(data.keys())
             selected_sheet = st.selectbox("시트 선택 (Select Sheet)", sheet_names)
@@ -248,11 +241,9 @@ if data:
             if view_btn:
                 st.session_state.view_df = data[selected_sheet]
 
-        # 조회된 데이터 표시 (폼 밖에서)
         if st.session_state.view_df is not None:
             st.dataframe(st.session_state.view_df, use_container_width=True)
         elif sheet_names:
-            # 처음에 아무것도 안 눌렀을 때 기본으로 첫 시트 보여주기 (옵션)
             st.info("위에서 시트를 선택하고 '데이터 조회' 버튼을 눌러주세요.")
 
 else:
