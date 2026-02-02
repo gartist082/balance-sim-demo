@@ -23,6 +23,10 @@ class Character:
         int_atk = base_stat * class_row['Stat_Weight_Int']
         self.atk = max(str_atk, int_atk)
         
+        # [수정] 엑셀 데이터에서 치명타율 가져오기 (없으면 기본 0.1)
+        self.crit_rate = class_row.get('Crit_Rate', 0.1)
+        self.crit_dmg = 1.5 # 치명타 피해 150% 고정 (필요시 데이터화 가능)
+        
         # 스킬 설정
         if skills_df is not None:
             self.skills = skills_df[skills_df['Class_Name'] == self.name].copy()
@@ -60,7 +64,12 @@ class Character:
 
     def use_skill(self, skill):
         self.current_mp -= skill['MP_Cost']
-        dmg = self.atk * (skill['Dmg_Percent'] / 100.0)
+        
+        # 치명타 로직 적용
+        is_crit = np.random.random() < self.crit_rate
+        dmg_mult = self.crit_dmg if is_crit else 1.0
+        
+        dmg = self.atk * (skill['Dmg_Percent'] / 100.0) * dmg_mult
         
         self.total_damage += dmg
         self.damage_log.append({
@@ -78,7 +87,11 @@ class Character:
 
     def basic_attack(self):
         if int(self.current_time * 10) % 10 == 0:
-            dmg = self.atk
+            # 평타도 치명타 적용
+            is_crit = np.random.random() < self.crit_rate
+            dmg_mult = self.crit_dmg if is_crit else 1.0
+            
+            dmg = self.atk * dmg_mult
             self.total_damage += dmg
             self.damage_log.append({
                 'Time': round(self.current_time, 2),
