@@ -70,6 +70,7 @@ balance-sim-demo/
 | **Cooldown / MP_Cost** | 스킬 회전율과 자원 관리의 핵심 변수 |
 | **Dmg_Percent** | 공격력 대비 데미지 계수 (%) |
 | **Hit_Count** | 타격 횟수 (다단 히트 시 데미지 편차 보정 효과) |
+
 ### 4. `Monster_Book` & `Dungeon_Config` (환경 설정)
 
 | Column | Description |
@@ -83,6 +84,7 @@ balance-sim-demo/
 | Column | Description |
 | :--- | :--- |
 | **Stat_Multiplier** | 무과금(1.0) 대비 등급별 스탯 배율 |
+
 
 ---
 
