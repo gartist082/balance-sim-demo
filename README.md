@@ -2,8 +2,7 @@
 
 > **"Data-Driven Design: 수치가 아닌, 경험을 검증합니다."**
 >
-> * **Project Type:** MMORPG 전투 & 경제 밸런스 검증 시뮬레이터
-> * **Role:** Lead Balance Designer (Project Lead & Design)
+> * **Project Type:** MMORPG 전투 밸런스 검증 시뮬레이터
 > * **Co-Work:** AI Assistant (Python Implementation & Refactoring)
 > * **Tech Stack:** Python 3.9, Streamlit, Pandas, Plotly, NumPy
 > * **Live Demo:** [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://balance-sim-demo-fymypnl2dqsefveoluyf8l.streamlit.app/)
