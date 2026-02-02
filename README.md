@@ -8,7 +8,6 @@
 > * **Tech Stack:** Python 3.9, Streamlit, Pandas, Plotly, NumPy
 > * **Live Demo:** [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://balance-sim-demo-fymypnl2dqsefveoluyf8l.streamlit.app/)
 
----
 
 ## 🎯 프로젝트 개요 (Project Objective)
 
@@ -16,7 +15,6 @@
 
 단순한 엑셀(Static) 계산의 한계를 넘어, **Time-stream(시간 흐름)** 기반의 전투 엔진과 **Monte Carlo(확률 분포)** 기법을 도입하여, 밸런스 리스크를 정량적으로 분석하고 제어하는 데 목적이 있습니다.
 
----
 
 ## 📂 프로젝트 구조 (File Structure)
 
@@ -42,7 +40,6 @@ balance-sim-demo/
 *   **Ecosystem Balance:** 과금 등급별(무과금 vs 핵과금) 스펙 격차를 시각화합니다.
 *   **Lanchester's Law:** 란체스터 제2법칙(제곱 법칙)을 적용하여, RVR(다대일 전투) 환경에서의 **'실질적 교환비(Exchange Ratio)'**를 이론적으로 도출합니다.
 
----
 
 ## 🧩 데이터 프로토콜 (Excel Schema)
 
@@ -86,7 +83,6 @@ balance-sim-demo/
 | **Stat_Multiplier** | 무과금(1.0) 대비 등급별 스탯 배율 |
 
 
----
 
 ## 💡 기획적 통찰 (Design Insights)
 
@@ -96,7 +92,6 @@ balance-sim-demo/
 2.  **레이드 피로도 관리:** 이론상 클리어 타임(TTK)이 너무 길거나 짧은 던전을 찾아내어 보스 체력을 조절합니다.
 3.  **P2W 리스크 관리:** 고과금 유저의 효율이 생태계를 파괴할 수준인지, 투자 대비 효율이 낮은지를 수학적으로 진단합니다.
 
----
 
 ## 🤝 Project Team
 
