@@ -8,35 +8,52 @@ import numpy as np
 st.set_page_config(page_title="MMORPG Balance Verification Pro", layout="wide")
 PLOT_CONFIG = {'displayModeBar': False, 'staticPlot': True}
 
-# 세션 초기화
+# -----------------------------------------------------------------------------
+# 1. 세션 초기화
+# -----------------------------------------------------------------------------
 if 'growth_res' not in st.session_state: st.session_state.growth_res = None
 if 'monte_res' not in st.session_state: st.session_state.monte_res = None
 if 'raid_res' not in st.session_state: st.session_state.raid_res = None
 if 'bal_df' not in st.session_state: st.session_state.bal_df = None
 if 'view_df' not in st.session_state: st.session_state.view_df = None
-if 'active_tab' not in st.session_state: st.session_state.active_tab = "1. 클래스 성장/전투 검증"  # ✅ 현재 탭 상태 저장용
 
+# -----------------------------------------------------------------------------
+# 2. UI 레이아웃 및 메뉴 (선배님 아이디어 반영)
+# -----------------------------------------------------------------------------
 st.title("⚖️ MMORPG Balance Verification System")
 
-uploaded_file = st.sidebar.file_uploader("Upload Data (BalanceSheets.xlsx)", type=['xlsx'])
-default_file = "BalanceSheets.xlsx"
+# 사이드바 구성
+with st.sidebar:
+    st.header("📂 데이터 및 메뉴")
+    uploaded_file = st.file_uploader("Upload Data (BalanceSheets.xlsx)", type=['xlsx'])
+    default_file = "BalanceSheets.xlsx"
+    
+    st.divider()
+    
+    # [핵심 수정] 탭 대신 라디오 버튼으로 네비게이션 구현 (상태 유지 100% 보장)
+    menu_options = [
+        "1. 클래스 성장/전투 검증",
+        "2. 레이드 난이도 검증",
+        "3. 과금 밸런스 검증",
+        "4. 데이터 열람"
+    ]
+    selected_tab = st.radio("검증 모드 선택", menu_options)
 
+# 데이터 로드 로직
 data = None
 if uploaded_file: data = load_excel_data(uploaded_file)
-else:
+else: 
     try: data = load_excel_data(default_file)
     except: pass
 
+# -----------------------------------------------------------------------------
+# 3. 메인 로직 (탭 별 분기)
+# -----------------------------------------------------------------------------
 if data:
-    tab_labels = ["1. 클래스 성장/전투 검증", "2. 레이드 난이도 검증", "3. 과금 밸런스 검증", "4. 데이터 열람"]
-    tabs = st.tabs(tab_labels)
-    tab1, tab2, tab3, tab4 = tabs
-
-    # ========================================================================
-    # TAB 1: 클래스 성장 & 전투
-    # ========================================================================
-    with tab1:
-        st.session_state.active_tab = tab_labels[0]  # ✅ 현재 탭 상태 갱신
+    # =========================================================================
+    # VIEW 1: 클래스 성장 & 전투
+    # =========================================================================
+    if selected_tab == menu_options[0]:
         st.subheader("1. Class Growth & Combat Simulation")
         st.info("📝 **검증 목적:** 기획된 '목표 DPS' 달성 여부와 확률 변수(치명타)에 따른 딜 편차를 확인합니다.")
 
@@ -63,13 +80,18 @@ if data:
 
             class_row = data['Class_Job'][data['Class_Job']['Class_Name'] == sel_class].iloc[0]
             target_dps = get_growth_stat(sel_level, data['Growth_Table'], 'Standard_DPS')
-
+            
             if btn_single:
                 player = Character(sel_level, class_row, data['Growth_Table'], data['Skill_Data'])
                 player.atk = player.atk * (adj_atk / 100.0)
                 player.crit_rate += (adj_crit / 100.0)
-                for _ in range(int(sel_time / 0.1)): player.update(0.1)
-                st.session_state.growth_res = {"type": "single", "player": player, "time": sel_time, "target": target_dps}
+                
+                steps = int(sel_time / 0.1)
+                for _ in range(steps): player.update(0.1)
+                
+                st.session_state.growth_res = {
+                    "type": "single", "player": player, "time": sel_time, "target": target_dps
+                }
                 st.session_state.monte_res = None
 
             if btn_monte:
@@ -81,6 +103,7 @@ if data:
                         p.crit_rate += (adj_crit / 100.0)
                         for _ in range(int(sel_time / 0.1)): p.update(0.1)
                         results.append(p.total_damage / sel_time)
+                
                 st.session_state.monte_res = {"data": results, "target": target_dps}
                 st.session_state.growth_res = None
 
@@ -88,14 +111,17 @@ if data:
             res = st.session_state.growth_res
             actual_dps = res['player'].total_damage / res['time']
             ratio = actual_dps / res['target'] if res['target'] > 0 else 0
+            
             st.divider()
             m1, m2, m3 = st.columns(3)
             m1.metric("실제 DPS", f"{int(actual_dps):,}")
             m2.metric("목표 DPS", f"{int(res['target']):,}")
             m3.metric("달성률", f"{ratio*100:.1f}%")
+            
             if ratio > 1.1: st.warning("⚠️ **OP 경고:** 기획 의도보다 데미지가 높습니다.")
             elif ratio < 0.9: st.error("⚠️ **UP 경고:** 딜이 부족합니다.")
             else: st.success("✅ **Pass:** 기획 의도와 일치합니다.")
+
             if res['player'].damage_log:
                 log_df = pd.DataFrame(res['player'].damage_log)
                 c1, c2 = st.columns([2, 1])
@@ -107,48 +133,59 @@ if data:
                     skill_sum = log_df.groupby('Name')['Damage'].sum().reset_index()
                     fig_pie = px.pie(skill_sum, values='Damage', names='Name')
                     st.plotly_chart(fig_pie, use_container_width=True, config=PLOT_CONFIG)
+                
                 with st.expander("🔎 상세 로그 보기"):
                     st.dataframe(log_df)
 
         if st.session_state.monte_res:
             data_list = st.session_state.monte_res['data']
-            avg, std, min_v, max_v = np.mean(data_list), np.std(data_list), np.min(data_list), np.max(data_list)
+            avg = np.mean(data_list)
+            std = np.std(data_list)
+            min_v = np.min(data_list)
+            max_v = np.max(data_list)
+            
             st.divider()
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("평균 DPS", f"{int(avg):,}")
             c2.metric("최소", f"{int(min_v):,}")
             c3.metric("최대", f"{int(max_v):,}")
             c4.metric("표준편차", f"{int(std):,}")
+            
             fig = px.histogram(data_list, nbins=10, title="DPS 분포도")
             fig.add_vline(x=avg, line_dash="dash", line_color="red")
             st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
-    # ========================================================================
-    # TAB 2: 레이드 난이도 검증
-    # ========================================================================
-    with tab2:
-        st.session_state.active_tab = tab_labels[1]
+    # =========================================================================
+    # VIEW 2: 레이드 난이도 검증
+    # =========================================================================
+    elif selected_tab == menu_options[1]:
         st.subheader("2. Raid & Dungeon TTK Analysis")
         st.markdown("**검증 목표:** 파티 규모와 유저 스펙을 고려할 때, 제한 시간 내 클리어가 가능한가?")
 
         with st.form("raid_form"):
             party_spec_ratio = st.slider("파티원 평균 스펙 비율", 50, 150, 100, format="%d%%")
             st.caption("💡 100%=정상 스펙, 80%=컨트롤 미숙, 120%=고스펙")
-
+            
             if st.form_submit_button("🛡️ 레이드 검증 실행"):
                 if 'Dungeon_Config' not in data: st.error("데이터 누락"); st.stop()
+                
                 dungeon_res = []
                 for idx, row in data['Dungeon_Config'].iterrows():
                     mob = data['Monster_Book'][data['Monster_Book']['Mob_ID'] == row['Boss_Mob_ID']].iloc[0]
                     std_dps = get_growth_stat(row['Min_Level'], data['Growth_Table'], 'Standard_DPS')
+                    
                     final_party_dps = std_dps * row['Rec_Party_Size'] * (party_spec_ratio / 100.0)
                     ttk = mob['HP'] / final_party_dps if final_party_dps > 0 else 999999
                     limit = row['Time_Limit_Sec']
+                    
                     status = "🟢 Clear" if ttk <= limit else "🔴 Fail"
                     dungeon_res.append({
-                        "Dungeon": row['Dungeon_Name'], "Lv": int(row['Min_Level']),
-                        "Boss HP": f"{mob['HP']:,}", "TTK": int(ttk),
-                        "Limit": limit, "Result": status
+                        "던전명": row['Dungeon_Name'],
+                        "권장Lv": int(row['Min_Level']),
+                        "보스체력": f"{mob['HP']:,}",
+                        "TTK (Sec)": int(ttk),
+                        "Limit (Sec)": limit,
+                        "Result": status
                     })
                 st.session_state.raid_res = pd.DataFrame(dungeon_res)
 
@@ -157,14 +194,15 @@ if data:
             st.markdown("##### 📊 검증 결과 리포트")
             st.caption(f"👉 **현재 조건:** 파티원들이 기획 의도 대비 **{party_spec_ratio}%** 효율을 낼 때를 가정합니다.")
             st.dataframe(df, use_container_width=True)
-            fig = px.bar(df, x='Dungeon', y=['TTK', 'Limit'], barmode='group', title=f"클리어 타임 비교")
+            
+            fig = px.bar(df, x='던전명', y=['TTK (Sec)', 'Limit (Sec)'], barmode='group', 
+                         title=f"클리어 타임 비교")
             st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
-    # ========================================================================
-    # TAB 3: 과금 밸런스 검증
-    # ========================================================================
-    with tab3:
-        st.session_state.active_tab = tab_labels[2]
+    # =========================================================================
+    # VIEW 3: 과금 밸런스 검증
+    # =========================================================================
+    elif selected_tab == menu_options[2]:
         st.subheader("3. Payment & Lanchester Analysis")
         st.markdown("**검증 목표:** 과금 등급간 스탯 격차와 다대일 전투 효율 진단")
 
@@ -174,27 +212,30 @@ if data:
             with st.form("balance_form"):
                 t_lv = st.slider("비교할 레벨 구간", 1, 60, 60)
                 check_bal = st.form_submit_button("💰 밸런스 분석 실행")
-
+                
                 if check_bal:
                     base_atk = get_growth_stat(t_lv, data['Growth_Table'], 'Base_Primary_Stat')
                     bal_res = []
-                    for _, row in data['Payment_Grade'].iterrows():
+                    for idx, row in data['Payment_Grade'].iterrows():
                         mult = row['Stat_Multiplier']
-                        cp = base_atk * mult * 100
+                        cp = base_atk * mult * 100 
                         bal_res.append({"Grade": row['Grade'], "Multiplier": mult, "CP": int(cp)})
+                    
                     st.session_state.bal_df = pd.DataFrame(bal_res)
 
-            if st.session_state.bal_df is not None:
+            if 'bal_df' in st.session_state:
                 df_b = st.session_state.bal_df
                 c1, c2 = st.columns(2)
                 with c1: st.dataframe(df_b, use_container_width=True)
                 with c2:
                     fig = px.bar(df_b, x='Grade', y='CP', color='Grade', title="전투력(CP) 격차")
                     st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
+                
                 try:
                     h_cp = df_b[df_b['Grade'].str.contains("Heavy", case=False)]['CP'].values[0]
                     f_cp = df_b[df_b['Grade'].str.contains("Free", case=False)]['CP'].values[0]
                     ratio = np.sqrt(h_cp / f_cp)
+                    
                     st.info(f"""
                     **⚔️ 란체스터 분석 결과:**
                     * 헤비과금 유저는 무과금 유저보다 단순 스펙이 **{h_cp/f_cp:.1f}배** 높습니다.
@@ -202,23 +243,24 @@ if data:
                     """)
                 except: pass
 
-    # ========================================================================
-    # TAB 4: 데이터 열람
-    # ========================================================================
-    with tab4:
-        st.session_state.active_tab = tab_labels[3]
+    # =========================================================================
+    # VIEW 4: 데이터 열람
+    # =========================================================================
+    elif selected_tab == menu_options[3]:
         st.subheader("4. Loaded Balance Data")
+        
         with st.form("data_view_form"):
             sheet_names = list(data.keys())
             selected_sheet = st.selectbox("시트 선택 (Select Sheet)", sheet_names)
             view_btn = st.form_submit_button("📂 데이터 조회")
+            
             if view_btn:
                 st.session_state.view_df = data[selected_sheet]
 
         if st.session_state.view_df is not None:
             st.dataframe(st.session_state.view_df, use_container_width=True)
-        elif 'sheet_names' in locals() and sheet_names:
+        elif sheet_names:
             st.info("위에서 시트를 선택하고 '데이터 조회' 버튼을 눌러주세요.")
 
 else:
-    st.info("👈 Please upload 'BalanceSheets.xlsx'")
+    st.info("👈 왼쪽 사이드바에서 'BalanceSheets.xlsx' 파일을 업로드해주세요.")
