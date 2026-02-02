@@ -18,7 +18,7 @@ if 'bal_df' not in st.session_state: st.session_state.bal_df = None
 if 'view_df' not in st.session_state: st.session_state.view_df = None
 
 # -----------------------------------------------------------------------------
-# 2. UI 레이아웃 및 메뉴 (선배님 아이디어 반영)
+# 2. UI 레이아웃 및 메뉴
 # -----------------------------------------------------------------------------
 st.title("⚖️ MMORPG Balance Verification System")
 
@@ -30,7 +30,7 @@ with st.sidebar:
     
     st.divider()
     
-    # [핵심 수정] 탭 대신 라디오 버튼으로 네비게이션 구현 (상태 유지 100% 보장)
+    # 라디오 버튼 네비게이션
     menu_options = [
         "1. 클래스 성장/전투 검증",
         "2. 레이드 난이도 검증",
@@ -39,7 +39,7 @@ with st.sidebar:
     ]
     selected_tab = st.radio("검증 모드 선택", menu_options)
 
-# 데이터 로드 로직
+# 데이터 로드
 data = None
 if uploaded_file: data = load_excel_data(uploaded_file)
 else: 
@@ -47,7 +47,7 @@ else:
     except: pass
 
 # -----------------------------------------------------------------------------
-# 3. 메인 로직 (탭 별 분기)
+# 3. 메인 로직
 # -----------------------------------------------------------------------------
 if data:
     # =========================================================================
@@ -183,8 +183,8 @@ if data:
                         "던전명": row['Dungeon_Name'],
                         "권장Lv": int(row['Min_Level']),
                         "보스체력": f"{mob['HP']:,}",
-                        "TTK (Sec)": int(ttk),
-                        "Limit (Sec)": limit,
+                        "TTK": int(ttk),
+                        "Limit": limit,
                         "Result": status
                     })
                 st.session_state.raid_res = pd.DataFrame(dungeon_res)
@@ -195,7 +195,7 @@ if data:
             st.caption(f"👉 **현재 조건:** 파티원들이 기획 의도 대비 **{party_spec_ratio}%** 효율을 낼 때를 가정합니다.")
             st.dataframe(df, use_container_width=True)
             
-            fig = px.bar(df, x='던전명', y=['TTK (Sec)', 'Limit (Sec)'], barmode='group', 
+            fig = px.bar(df, x='던전명', y=['TTK', 'Limit'], barmode='group', 
                          title=f"클리어 타임 비교")
             st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
@@ -223,7 +223,8 @@ if data:
                     
                     st.session_state.bal_df = pd.DataFrame(bal_res)
 
-            if 'bal_df' in st.session_state:
+            # [수정] 데이터가 있을 때만(is not None) 그래프를 그림 -> 에러 해결
+            if st.session_state.bal_df is not None:
                 df_b = st.session_state.bal_df
                 c1, c2 = st.columns(2)
                 with c1: st.dataframe(df_b, use_container_width=True)
@@ -263,4 +264,4 @@ if data:
             st.info("위에서 시트를 선택하고 '데이터 조회' 버튼을 눌러주세요.")
 
 else:
-    st.info("👈 왼쪽 사이드바에서 'BalanceSheets.xlsx' 파일을 업로드해주세요.")
+    st.info("👈 Please upload 'BalanceSheets.xlsx'")
