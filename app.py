@@ -6,7 +6,7 @@ import numpy as np
 import time
 
 # 페이지 기본 설정
-st.set_page_config(page_title="MMORPG Balance Sim Pro", layout="wide")
+st.set_page_config(page_title="MMORPG Balance Verification System", layout="wide")
 
 # -----------------------------------------------------------------------------
 # 1. 데이터 로드 및 전처리
@@ -15,280 +15,324 @@ st.set_page_config(page_title="MMORPG Balance Sim Pro", layout="wide")
 def load_data(uploaded_file):
     try:
         xls = pd.ExcelFile(uploaded_file)
-        stats_df = pd.read_excel(xls, 'Stats')
-        skills_df = pd.read_excel(xls, 'Skills')
-        
-        # 컬럼명 공백 제거
-        stats_df.columns = stats_df.columns.str.strip()
-        skills_df.columns = skills_df.columns.str.strip()
-        
-        return stats_df, skills_df
+        # 모든 시트 다 읽기
+        data_dict = {}
+        for sheet_name in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name)
+            # 컬럼명 공백 제거
+            df.columns = df.columns.str.strip()
+            data_dict[sheet_name] = df
+            
+        return data_dict
     except Exception as e:
-        return None, None
+        st.error(f"데이터 로드 중 오류: {e}")
+        return None
+
+# 선형 보간 함수 (레벨에 따른 스펙 추정용)
+def interpolate_stat(level, growth_df, target_col):
+    # 해당 레벨이 딱 있으면 그거 리턴
+    if level in growth_df['Level'].values:
+        return growth_df.loc[growth_df['Level'] == level, target_col].values[0]
+    
+    # 없으면 앞뒤 레벨 찾아서 보간 (Linear Interpolation)
+    lower = growth_df[growth_df['Level'] < level]
+    upper = growth_df[growth_df['Level'] > level]
+    
+    if lower.empty: return upper.iloc[0][target_col] # 최소 레벨보다 작음
+    if upper.empty: return lower.iloc[-1][target_col] # 최대 레벨보다 큼
+    
+    x1, y1 = lower.iloc[-1]['Level'], lower.iloc[-1][target_col]
+    x2, y2 = upper.iloc[0]['Level'], upper.iloc[0][target_col]
+    
+    # 직선 방정식: y = y1 + (y2-y1) * (x-x1) / (x2-x1)
+    return y1 + (y2 - y1) * (level - x1) / (x2 - x1)
 
 # -----------------------------------------------------------------------------
 # 2. 시뮬레이션 엔진 (Core Logic)
 # -----------------------------------------------------------------------------
 class Character:
-    def __init__(self, stat_row, skills_df, back_attack_prob=0.0):
-        self.name = stat_row['Class']
-        # 기본 스탯
-        self.base_atk = stat_row['Base_ATK']
-        self.crit_rate = stat_row['Crit_Rate']
-        self.crit_dmg = stat_row['Crit_Dmg']
-        self.cdr = stat_row['Cooldown_Reduction']
-        self.back_attack_bonus = stat_row.get('Back_Attack_Bonus', 1.0) # 없으면 1.0
+    def __init__(self, stat_row, skills_df, multiplier=1.0):
+        self.name = stat_row.get('Class', 'User')
+        # 과금 등급 보정치 적용 (기본 1.0)
+        self.multiplier = multiplier
         
-        # 자원(MP) 스탯
+        self.base_atk = stat_row['Base_ATK'] * multiplier
+        self.crit_rate = stat_row.get('Crit_Rate', 0)
+        self.crit_dmg = stat_row.get('Crit_Dmg', 1.5)
+        self.cdr = stat_row.get('Cooldown_Reduction', 0)
+        self.back_attack_bonus = stat_row.get('Back_Attack_Bonus', 1.0)
+        
+        # 방어/체력 스탯 (없으면 기본값)
+        self.max_hp = stat_row.get('Base_HP', 1000) * multiplier
+        self.current_hp = self.max_hp
+        self.defense = stat_row.get('Base_DEF', 0) * multiplier
+        
+        # 자원
         self.max_mp = stat_row.get('Max_MP', 100)
         self.mp_regen = stat_row.get('MP_Regen', 5)
         self.current_mp = self.max_mp
         
-        # 시뮬레이션 설정
-        self.back_attack_prob = back_attack_prob # 백어택 성공 확률
-        
-        # 스킬 세팅
-        self.skills = skills_df[skills_df['Class'] == self.name].copy()
-        self.skills['next_available'] = 0.0
-        
-        # 상태 변수
+        # 스킬
+        if skills_df is not None:
+            self.skills = skills_df[skills_df['Class'] == self.name].copy()
+            self.skills['next_available'] = 0.0
+        else:
+            self.skills = pd.DataFrame() # 스킬 없음 (평타만)
+            
         self.current_time = 0.0
         self.is_casting = False
         self.cast_end_time = 0.0
-        self.total_damage = 0
-        self.damage_log = []
+        self.total_damage_dealt = 0
 
-    def update(self, time_step):
+    def take_damage(self, damage):
+        # 방어력 공식 (단순 뺄셈 공식: Dmg = Atk - Def)
+        # 최소 데미지 1 보장
+        actual_dmg = max(1, damage - self.defense)
+        self.current_hp -= actual_dmg
+        return actual_dmg
+
+    def update_combat(self, time_step, target):
         self.current_time += time_step
         
-        # 1. MP 회복 (초당 회복량 * 시간)
+        # MP 회복
         if self.current_mp < self.max_mp:
             self.current_mp += self.mp_regen * time_step
-            if self.current_mp > self.max_mp:
-                self.current_mp = self.max_mp
-
-        # 2. 캐스팅 중인지 확인
+            
+        # 행동 가능 확인
         if self.is_casting:
             if self.current_time >= self.cast_end_time:
-                self.is_casting = False # 캐스팅 완료
+                self.is_casting = False
             else:
-                return # 캐스팅 중엔 행동 불가
+                return 0 # 딜 못넣음
+
+        # 스킬 사용 로직 (간소화: 쿨타임 되면 무조건 사용)
+        damage_output = 0
         
-        # 3. 사용 가능한 스킬 탐색
-        # 조건: 쿨타임 완료 AND 마나 충분
-        available_skills = self.skills[
-            (self.skills['next_available'] <= self.current_time) & 
-            (self.skills['MP_Cost'] <= self.current_mp)
-        ].sort_values(by='Damage_Coef', ascending=False) # 계수 높은 것 우선
+        # 1. 사용 가능 스킬 찾기
+        if not self.skills.empty:
+            ready_skills = self.skills[
+                (self.skills['next_available'] <= self.current_time) &
+                (self.skills['MP_Cost'] <= self.current_mp)
+            ].sort_values(by='Damage_Coef', ascending=False)
+            
+            if not ready_skills.empty:
+                skill = ready_skills.iloc[0]
+                damage_output = self.use_skill(skill)
         
-        if not available_skills.empty:
-            skill = available_skills.iloc[0]
-            self.use_skill(skill)
-        else:
-            # 스킬을 못 쓰면 대기 (평타가 쿨타임 0, MP 0이면 평타를 치게 됨)
-            pass
+        # 스킬이 없거나 못 썼으면 평타 (기본 공격)
+        if damage_output == 0:
+            # 평타: 쿨타임 1초 가정
+            damage_output = self.base_atk 
+
+        # 타겟에게 데미지 적용
+        actual_dmg = target.take_damage(damage_output)
+        self.total_damage_dealt += actual_dmg
+        return actual_dmg
 
     def use_skill(self, skill):
-        skill_idx = skill.name
-        skill_name = skill['Skill_Name']
-        hit_count = int(skill.get('Hit_Count', 1))
-        mp_cost = skill.get('MP_Cost', 0)
+        # 비용 소모
+        self.current_mp -= skill['MP_Cost']
         
-        # 자원 소모
-        self.current_mp -= mp_cost
+        # 데미지 계산
+        is_crit = np.random.random() < self.crit_rate
+        dmg = self.base_atk * skill['Damage_Coef'] * (self.crit_dmg if is_crit else 1.0)
         
-        # 데미지 계산 (다단 히트 로직)
-        total_skill_dmg = 0
-        hits_info = [] # 로그용
+        # 쿨타임 적용
+        self.skills.at[skill.name, 'next_available'] = self.current_time + skill['Cooldown'] * (1 - self.cdr)
         
-        for _ in range(hit_count):
-            # 1) 치명타 판정
-            is_crit = np.random.random() < self.crit_rate
-            dmg_mult = self.crit_dmg if is_crit else 1.0
-            
-            # 2) 백어택 판정 (스킬이 백어택 가능하고, 확률에 성공했을 때)
-            is_back = False
-            if skill['Is_BackAttack'] and (np.random.random() < self.back_attack_prob):
-                is_back = True
-                dmg_mult *= self.back_attack_bonus
-            
-            # 3) 최종 데미지 (계수를 타수만큼 나누지 않고, 기획 데이터가 '타당 데미지'가 아니라 '총 데미지'라면 나눠야 함)
-            # 여기서는 편의상 입력된 Damage_Coef가 "총 계수"라고 가정하고 타수로 나눔
-            damage = (self.base_atk * skill['Damage_Coef'] / hit_count) * dmg_mult
-            
-            total_skill_dmg += damage
-            
-        # 로그 기록 (타수 합산해서 기록)
-        self.total_damage += total_skill_dmg
-        self.damage_log.append({
-            'Time': round(self.current_time, 2),
-            'Skill': skill_name,
-            'Damage': int(total_skill_dmg),
-            'MP': int(self.current_mp),
-            'Cumulative_Damage': int(self.total_damage)
-        })
-        
-        # 상태 업데이트 (캐스팅 시작)
+        # 캐스팅 적용
         self.is_casting = True
         self.cast_end_time = self.current_time + skill['Cast_Time']
         
-        # 쿨타임 적용 (쿨감 반영)
-        real_cooldown = skill['Cooldown'] * (1 - self.cdr)
-        self.skills.at[skill_idx, 'next_available'] = self.current_time + real_cooldown
+        return dmg
 
 # -----------------------------------------------------------------------------
-# 3. 메인 UI (Streamlit)
+# 3. 메인 UI 구성
 # -----------------------------------------------------------------------------
-st.title("⚔️ MMORPG Balance Simulator (Pro Ver.)")
-st.markdown("### 데이터 기반 전투 검증 및 몬테카를로 시뮬레이션")
+st.title("⚖️ MMORPG Balance Verification System")
+st.markdown("**데이터 기반 전투/성장/밸런스 통합 검증 도구**")
 
-# 사이드바 설정
-st.sidebar.header("1. Data & Settings")
-uploaded_file = st.sidebar.file_uploader("Upload BalanceSheets.xlsx", type=['xlsx'])
+uploaded_file = st.sidebar.file_uploader("Upload Data (BalanceSheets.xlsx)", type=['xlsx'])
 default_file = "BalanceSheets.xlsx"
 
+data = None
 if uploaded_file:
-    stats_df, skills_df = load_data(uploaded_file)
+    data = load_data(uploaded_file)
 else:
     try:
-        stats_df, skills_df = load_data(default_file)
-        st.sidebar.success(f"기본 파일 로드됨: {default_file}")
+        data = load_data(default_file)
+        st.sidebar.success("기본 데이터 로드 완료")
     except:
-        stats_df, skills_df = None, None
-        st.sidebar.error("엑셀 파일을 업로드하거나 폴더에 넣어주세요.")
+        st.sidebar.warning("데이터 파일을 업로드해주세요.")
 
-if stats_df is not None and skills_df is not None:
-    
-    # 클래스 선택
-    selected_class = st.sidebar.selectbox("Class Select", stats_df['Class'].unique())
-    original_stat = stats_df[stats_df['Class'] == selected_class].iloc[0]
-    
-    # -------------------------------------------------------------------------
-    # A/B 테스트 설정 (수치 조정 시뮬레이션)
-    # -------------------------------------------------------------------------
-    st.sidebar.header("2. Stat Tuning (A/B Test)")
-    st.sidebar.info("아래 수치를 조정하여 원본과 비교해보세요.")
-    
-    adj_atk = st.sidebar.number_input("Base ATK", value=int(original_stat['Base_ATK']))
-    adj_crit = st.sidebar.slider("Crit Rate", 0.0, 1.0, float(original_stat['Crit_Rate']))
-    adj_cdr = st.sidebar.slider("Cooldown Reduction", 0.0, 0.5, float(original_stat['Cooldown_Reduction']))
-    
-    # 백어택 확률 (플레이어 컨트롤 실력 변수)
-    back_attack_prob = st.sidebar.slider("Back Attack Success Rate (Control)", 0.0, 1.0, 0.5, help="백어택 스킬 사용 시 성공할 확률")
-    sim_duration = st.sidebar.slider("Combat Time (sec)", 30, 180, 60)
+if data:
+    # 탭 구성
+    tab1, tab2, tab3 = st.tabs(["⚔️ 전투 시뮬레이션", "🛡️ 플레이 검증 (생존 비율)", "💰 밸런스 검증 (과금 격차)"])
 
-    # -------------------------------------------------------------------------
-    # 메인 화면: 실행 및 결과
-    # -------------------------------------------------------------------------
-    
-    col_act1, col_act2 = st.columns(2)
-    with col_act1:
-        run_single = st.button("▶️ 단일 전투 실행 (Single Run)", type="primary")
-    with col_act2:
-        run_monte = st.button("🎲 몬테카를로 시뮬레이션 (100회)", type="secondary")
-
-    # 조정된 스탯으로 새 데이터 생성
-    tuned_stat = original_stat.copy()
-    tuned_stat['Base_ATK'] = adj_atk
-    tuned_stat['Crit_Rate'] = adj_crit
-    tuned_stat['Cooldown_Reduction'] = adj_cdr
-
-    # === 기능 1: 단일 전투 실행 (로그 확인용) ===
-    if run_single:
-        # A: 원본, B: 튜닝
-        char_a = Character(original_stat, skills_df, back_attack_prob)
-        char_b = Character(tuned_stat, skills_df, back_attack_prob)
+    # =========================================================================
+    # TAB 1: 기존 전투 시뮬레이터 (단일 캐릭터 DPS 검증)
+    # =========================================================================
+    with tab1:
+        st.subheader("Single Character DPS Simulation")
+        stats_df = data['Stats']
+        skills_df = data['Skills']
         
-        time_step = 0.1
-        steps = int(sim_duration / time_step)
+        selected_class = st.selectbox("Class Select", stats_df['Class'].unique())
+        stat_row = stats_df[stats_df['Class'] == selected_class].iloc[0]
         
-        for _ in range(steps):
-            char_a.update(time_step)
-            char_b.update(time_step)
+        if st.button("▶️ Run DPS Test (Single)"):
+            char = Character(stat_row, skills_df)
+            dummy_target = Character({'Base_HP':999999, 'Base_ATK':0, 'Base_DEF':0}, None) # 샌드백
             
-        # 결과 표시
-        dps_a = char_a.total_damage / sim_duration
-        dps_b = char_b.total_damage / sim_duration
-        gap = ((dps_b - dps_a) / dps_a) * 100
+            logs = []
+            for t in range(600): # 60초 (0.1s step)
+                dmg = char.update_combat(0.1, dummy_target)
+                if dmg > 0:
+                    logs.append({'Time': t*0.1, 'Damage': dmg})
+            
+            st.metric("Total Damage (60s)", f"{int(char.total_damage_dealt):,}")
+            if logs:
+                st.line_chart(pd.DataFrame(logs).set_index('Time')['Damage'].cumsum())
+
+    # =========================================================================
+    # TAB 2: 플레이 검증 (던전 난이도 & 생존 비율)
+    # =========================================================================
+    with tab2:
+        st.subheader("PVE Dungeon Difficulty Verification")
+        st.markdown("> **검증 로직:** `유저 생존 턴 / 몬스터 생존 턴 = 생존 비율` (높을수록 쉬움)")
         
-        st.subheader("📊 Single Run Result")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Original DPS", f"{int(dps_a):,}")
-        m2.metric("Tuned DPS", f"{int(dps_b):,}", delta=f"{gap:.2f}%")
-        m3.metric("Skill Uses (Tuned)", len(char_b.damage_log))
+        # 데이터 로드
+        growth_df = data['User_Growth']
+        monster_template_df = data['Monster_Template']
+        dungeon_df = data['Dungeon_List']
         
-        # 그래프: 시간대별 누적 딜량 비교
-        df_a = pd.DataFrame(char_a.damage_log)
-        df_b = pd.DataFrame(char_b.damage_log)
-        df_a['Version'] = 'Original'
-        df_b['Version'] = 'Tuned'
-        
-        if not df_a.empty and not df_b.empty:
-            combined_df = pd.concat([df_a, df_b])
-            fig = px.line(combined_df, x='Time', y='Cumulative_Damage', color='Version', 
-                          title="Damage Comparison Over Time", markers=True)
+        if st.button("🛡️ 전체 던전 검증 실행 (Batch Run)"):
+            results = []
+            
+            for idx, row in dungeon_df.iterrows():
+                d_name = row['Dungeon_Name']
+                lvl = row['Unlock_Level']
+                m_type = row['Monster_Type']
+                target_ratio = row['Target_Survival_Ratio']
+                
+                # 1. 유저 스펙 생성 (보간법)
+                user_hp = interpolate_stat(lvl, growth_df, 'Base_HP')
+                user_atk = interpolate_stat(lvl, growth_df, 'Base_ATK')
+                user_def = interpolate_stat(lvl, growth_df, 'Base_DEF')
+                
+                # 2. 몬스터 스펙 생성 (템플릿 비율 적용)
+                m_template = monster_template_df[monster_template_df['Monster_Type'] == m_type].iloc[0]
+                mon_hp = user_hp * m_template['HP_Ratio']
+                mon_atk = user_atk * m_template['ATK_Ratio']
+                mon_def = user_def * m_template['DEF_Ratio'] # 보통 몬스터 방어력은 유저보다 낮게 설정하지만 여기선 비율대로
+                
+                # 3. 전투 시뮬레이션 (간이 턴제 계산)
+                # 유저 -> 몬스터 데미지
+                dmg_to_mon = max(1, user_atk - mon_def)
+                turns_to_kill_mon = mon_hp / dmg_to_mon
+                
+                # 몬스터 -> 유저 데미지
+                dmg_to_user = max(1, mon_atk - user_def)
+                turns_to_die = user_hp / dmg_to_user
+                
+                # 4. 생존 비율 계산
+                survival_ratio = turns_to_die / turns_to_kill_mon
+                
+                # 판정
+                # 목표 비율보다 크면 쉬움(Pass), 너무 작으면 어려움(Fail/Hard)
+                # 여기서는 오차 범위 20% 내외를 적정으로 간주하거나, 단순 크기 비교
+                status = "🟢 Pass" if survival_ratio >= target_ratio else "🔴 Fail (Too Hard)"
+                if survival_ratio > target_ratio * 1.5: status = "🔵 Too Easy"
+                
+                results.append({
+                    "Dungeon": d_name,
+                    "Level": lvl,
+                    "User HP": int(user_hp),
+                    "Mon HP": int(mon_hp),
+                    "User Survive Turn": round(turns_to_die, 1),
+                    "Mon Survive Turn": round(turns_to_kill_mon, 1),
+                    "Actual Ratio": round(survival_ratio, 2),
+                    "Target Ratio": target_ratio,
+                    "Result": status
+                })
+            
+            res_df = pd.DataFrame(results)
+            st.dataframe(res_df.style.applymap(lambda v: 'color: red;' if 'Fail' in str(v) else ('color: blue;' if 'Easy' in str(v) else None), subset=['Result']), use_container_width=True)
+            
+            # 시각화
+            fig = px.bar(res_df, x='Dungeon', y=['Actual Ratio', 'Target Ratio'], barmode='group',
+                         title="생존 비율 검증 결과 (Target vs Actual)")
+            fig.add_hline(y=1.0, line_dash="dash", annotation_text="Balance Line (1.0)")
             st.plotly_chart(fig, use_container_width=True)
-            
-            with st.expander("상세 전투 로그 (Tuned Ver)"):
-                st.dataframe(df_b)
 
-    # === 기능 2: 몬테카를로 시뮬레이션 (확률 분포 확인용) ===
-    if run_monte:
-        st.subheader("🎲 Monte Carlo Simulation")
+    # =========================================================================
+    # TAB 3: 밸런스 검증 (과금 격차 & 란체스터)
+    # =========================================================================
+    with tab3:
+        st.subheader("Payment Grade Balance & Lanchester's Law")
         
-        # 테스트를 위해 횟수를 1,000 -> 100으로 줄임
-        SIM_COUNT = 100  
+        grade_df = data['Payment_Grade']
         
-        results = []
-        progress_bar = st.progress(0)
-        status_text = st.empty() # 진행상황 텍스트 표시용
+        # 비교할 레벨 선택
+        target_lv = st.slider("검증할 유저 레벨 (Target Level)", 1, 100, 50)
         
-        start_time = time.time()
+        # 기준 스펙 가져오기
+        base_hp = interpolate_stat(target_lv, data['User_Growth'], 'Base_HP')
+        base_atk = interpolate_stat(target_lv, data['User_Growth'], 'Base_ATK')
         
-        # Spinner 추가
-        with st.spinner(f'전투 {SIM_COUNT}회를 시뮬레이션 중입니다... 잠시만 기다려주세요!'):
-            for i in range(SIM_COUNT):
-                # 튜닝된 스탯으로만 시뮬레이션
-                sim_char = Character(tuned_stat, skills_df, back_attack_prob)
+        if st.button("💰 과금 밸런스 분석 실행"):
+            
+            bal_results = []
+            
+            # 1. 등급별 전투력(CP) 계산
+            for idx, row in grade_df.iterrows():
+                mult = row['Stat_Multiplier']
+                cp = (base_atk * mult) * (base_hp * mult) / 100  # 단순 CP 공식 예시
+                bal_results.append({
+                    "Grade": row['Grade'],
+                    "Multiplier": mult,
+                    "ATK": int(base_atk * mult),
+                    "HP": int(base_hp * mult),
+                    "Combat Power (CP)": int(cp)
+                })
+            
+            bal_df = pd.DataFrame(bal_results)
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("#### 1. 등급별 스펙 & 전투력")
+                st.dataframe(bal_df, use_container_width=True)
+            
+            with c2:
+                st.markdown("#### 2. CP 격차 그래프")
+                fig_cp = px.bar(bal_df, x='Grade', y='Combat Power (CP)', color='Grade')
+                st.plotly_chart(fig_cp, use_container_width=True)
                 
-                step = 0.1
-                max_step = int(sim_duration / step)
-                for _ in range(max_step):
-                    sim_char.update(step)
+            # 2. 란체스터 법칙 검증 (헤비과금 vs 무과금)
+            st.markdown("---")
+            st.markdown("#### 3. 란체스터 법칙 (Square Law) 검증")
+            st.info("💡 **란체스터 제2법칙:** 소수의 강자(A)가 다수의 약자(B)와 대등하게 싸우려면?  \n`N = sqrt( CP_A / CP_B )` 명의 약자가 필요함.")
+            
+            # 무과금 vs 헤비과금 추출
+            try:
+                heavy = bal_df[bal_df['Grade'].str.contains("Heavy")].iloc[0]
+                free = bal_df[bal_df['Grade'].str.contains("Free")].iloc[0]
                 
-                results.append(sim_char.total_damage / sim_duration) # DPS 저장
+                cp_ratio = heavy['Combat Power (CP)'] / free['Combat Power (CP)']
+                needed_users = np.sqrt(cp_ratio)
                 
-                # 진행률 업데이트
-                if i % 10 == 0:
-                    progress_bar.progress((i + 1) / SIM_COUNT)
-                    status_text.text(f"진행률: {int((i+1)/SIM_COUNT*100)}% 완료")
-        
-        progress_bar.progress(100)
-        status_text.text("✅ 시뮬레이션 완료!")
-        elapsed = time.time() - start_time
-        
-        # 결과 분석
-        avg_dps = np.mean(results)
-        min_dps = np.min(results)
-        max_dps = np.max(results)
-        std_dev = np.std(results) # 표준편차
-        
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Average DPS", f"{int(avg_dps):,}")
-        c2.metric("Min DPS (Unlucky)", f"{int(min_dps):,}")
-        c3.metric("Max DPS (Lucky)", f"{int(max_dps):,}")
-        c4.metric("Stability (Std Dev)", f"{int(std_dev):,}")
-        
-        st.success(f"Simulation Complete in {elapsed:.2f} seconds! (N={SIM_COUNT})")
-        
-        # 히스토그램 (분포도)
-        fig_hist = px.histogram(results, nbins=30, title=f"DPS Distribution (N={SIM_COUNT})",
-                                labels={'value': 'DPS', 'count': 'Frequency'})
-        fig_hist.add_vline(x=avg_dps, line_dash="dash", line_color="red", annotation_text="Avg")
-        st.plotly_chart(fig_hist, use_container_width=True)
-        
-        st.markdown("""
-        **💡 분석 가이드:**
-        * 그래프가 **뾰족할수록(표준편차가 낮을수록)** 운에 좌우되지 않는 안정적인 딜러입니다.
-        * 그래프가 **넓게 퍼져있다면**, 치명타나 확률형 스킬 의존도가 높다는 뜻입니다.
-        """)
+                col_l1, col_l2, col_l3 = st.columns(3)
+                col_l1.metric("Heavy CP", f"{heavy['Combat Power (CP)']:,}")
+                col_l2.metric("Free CP", f"{free['Combat Power (CP)']:,}")
+                col_l3.metric("CP Ratio", f"{cp_ratio:.2f}배")
+                
+                st.success(f"⚔️ **검증 결과:** 헤비과금 유저 1명은 무과금 유저 **약 {needed_users:.2f}명**과 대등한 전투력을 가집니다.")
+                
+                if needed_users > 5:
+                    st.warning("⚠️ **경고:** 격차가 너무 큽니다. (1 vs 5 이상). 소과금/무과금 유저의 박탈감이 우려됩니다.")
+                else:
+                    st.success("✅ **양호:** 적절한 수준의 우위입니다.")
+                    
+            except:
+                st.error("데이터에 'Free' 또는 'Heavy' 등급이 명확하지 않아 계산 불가.")
+
