@@ -83,17 +83,3 @@ balance-sim-demo/
 *   **OP/UP 밸런스 조절:** 특정 직업의 실제 DPS가 기획 의도(Target)를 벗어나는 구간을 감지합니다.
 *   **레이드 피로도 관리:** 이론상 클리어 타임(TTK)이 너무 길거나 짧은 던전을 찾아내어 보스 체력을 조절합니다.
 *   **P2W 리스크 관리:** 고과금 유저의 효율이 생태계를 파괴할 수준인지, 투자 대비 효율이 낮은지를 수학적으로 진단합니다.
-
----
-
-## 🤝 Project Team
-
-### **Lead Designer: Jihoon Kim**
-*   **Role:** Project Planning, Data Structure Design, Algorithm Logic, Verification
-*   **Contact:** gartist1006@naver.com
-
-### **Technical Partner: AI Assistant (ChatGPT)**
-*   **Role:** Python Code Implementation, UI/UX Construction, Debugging & Refactoring
-*   **Collaboration Method:**
-    *   Human: Provides core logic, formulas, and data structure.
-    *   AI: Converts logic into executable Python code and visualizes data.
