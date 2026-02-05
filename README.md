@@ -1,4 +1,4 @@
-# ⚖️ MMORPG Balance Verification System (Pro)
+# ⚖️ MMORPG Balance Verification System
 
 > **"Data-Driven Design: 감(Feel)이 아닌 데이터(Data)로 밸런스를 증명합니다."**
 > 
