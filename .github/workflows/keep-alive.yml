@@ -12,4 +12,4 @@ jobs:
       - name: Keep Streamlit app awake
         run: |
           echo "Pinging Streamlit app to prevent sleep..."
-          curl -s -o /dev/null -w "%{http_code}" https://gartist082-balance-sim-demo.streamlit.app
+          curl -L -s -o /dev/null -w "%{http_code}" https://gartist082-balance-sim-demo.streamlit.app
